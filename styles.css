@@ -266,3 +266,22 @@ button{color:inherit}.app-shell{display:grid;grid-template-columns:var(--sidebar
 .modal-image-wrap.has-modifiers{border-radius:4px}
 @media(max-width:1450px){.border-toggle-control{grid-column:1/-1}.modifier-controls{flex-wrap:nowrap}.modifier-button{flex:1}}
 @media(prefers-reduced-motion:reduce){.card-tile.has-modifiers::before,.team-slot.has-modifiers::before,.card-modal.has-modifiers::before,.modal-image-wrap.has-modifiers::before{animation:none}}
+
+/* Screenshot inventory scanner */
+.scan-modal{
+  position:relative;width:min(920px,95vw);max-height:90vh;display:flex;flex-direction:column;
+  border:1px solid #302b35;border-radius:12px;background:#0d0d10;box-shadow:0 30px 100px rgba(0,0,0,.78);overflow:hidden
+}
+.scan-header{padding:24px 26px 16px;border-bottom:1px solid #242128}.scan-header h2{margin:0;font:700 26px Cinzel,serif}.scan-header p:last-child{margin:8px 0 0;color:#8d8791;font-size:12px}
+.scan-progress{min-height:240px;display:flex;align-items:center;justify-content:center;gap:10px;color:#918a96;font-size:12px}
+.scan-progress[hidden]{display:none!important}
+.scan-results{min-height:100px;overflow-y:auto;padding:14px 18px;display:grid;gap:9px}
+.scan-result{display:grid;grid-template-columns:72px minmax(0,1fr) 82px;align-items:center;gap:14px;padding:8px;border:1px solid #252229;border-radius:9px;background:#0a0a0c}
+.scan-result>img{width:72px;height:72px;object-fit:cover;border-radius:7px}
+.scan-result-fields{display:grid;gap:5px}.scan-result-fields label,.scan-quantity{display:grid;gap:5px;color:#746e78;font-size:9px;text-transform:uppercase;letter-spacing:.07em}
+.scan-result select,.scan-result input{width:100%;height:34px;padding:0 9px;color:#ded9e2;border:1px solid #302b34;border-radius:6px;background:#121216;outline:0}
+.scan-result select:focus,.scan-result input:focus{border-color:#8b2cc4}
+.scan-confidence{font-size:9px}.scan-confidence.is-good{color:#65c98a}.scan-confidence.needs-review{color:#e09b62}
+.scan-quantity input{text-align:center}.scan-actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;padding:14px 18px;border-top:1px solid #242128;background:#0a0a0c}
+.scan-error{display:grid;place-items:center;min-height:180px;color:#d07e87;text-align:center}
+@media(max-width:680px){.scan-result{grid-template-columns:58px 1fr}.scan-result>img{width:58px;height:58px}.scan-quantity{grid-column:1/-1}.scan-actions{grid-template-columns:1fr}}
