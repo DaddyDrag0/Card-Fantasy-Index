@@ -11,15 +11,18 @@ const SUPPORT_CARD_IDS = new Set([
   "bone-drake", "celestial-ruler", "shroom-paladin", "blue-shroomage",
   "shroom-commander", "green-shroomage", "bear", "flower-lord", "flower-guardian",
   "snow-beast", "cthulhu", "grave-guardian", "orc-warrior", "orc-shaman",
-  "ice-golem", "ice-dragon", "the-overseer"
+  "ice-golem", "ice-dragon", "the-overseer", "orc-king", "snow-mage"
+]);
+const REGULAR_CARD_IDS = new Set([
+  "wolf", "hellhound", "cerberus", "swamp-hydra", "shroom-spiderlings",
+  "skeleton-king", "abyssal-nightmare", "neptune"
 ]);
 const AOE_CARD_IDS = new Set([
-  "archer", "bone-mage", "mummy", "swamp-hydra", "deacon", "kraken", "diver",
-  "skeleton-king", "rift-destroyer", "star-titan", "behemoth", "rift-seraph",
-  "neptune", "shroom-spiderlings", "shroom-warrior", "red-shroomage",
-  "shroom-archer", "shroom-king", "wolf", "hellhound", "cerberus", "snow-mage",
-  "snow-husk", "moonlit-lizard", "abyssal-nightmare", "aeternus-the-abyssal-king",
-  "bandit-archer", "orc-king", "ember-mage", "fire-spirit", "heavenly-warrior",
+  "archer", "bone-mage", "mummy", "deacon", "kraken", "diver",
+  "rift-destroyer", "star-titan", "behemoth", "rift-seraph",
+  "shroom-warrior", "red-shroomage", "shroom-archer", "shroom-king",
+  "snow-husk", "moonlit-lizard", "aeternus-the-abyssal-king",
+  "bandit-archer", "ember-mage", "fire-spirit", "heavenly-warrior",
   "god-of-thunder"
 ]);
 
@@ -129,6 +132,7 @@ function sourceName(card) {
 
 function cardRole(card) {
   if (SUPPORT_CARD_IDS.has(card.id)) return "support";
+  if (REGULAR_CARD_IDS.has(card.id)) return "regular";
   if (AOE_CARD_IDS.has(card.id)) return "aoe";
   const description = normalize(`${card.abilityType || ""} ${card.abilityDescription || ""}`);
   const supportsAllies = /(all allies|allied team|grant allies|gives every ally|boosts entire team|next ally|fallen ally|active ally card|remaining allies|all poison-related allies|allies take|every ally deals|boosts all allies|two allies|current active ally|revives? .*ally|brings back .*ally)/.test(description);
