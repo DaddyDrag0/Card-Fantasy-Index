@@ -64,3 +64,73 @@ button{color:inherit}.app-shell{display:grid;grid-template-columns:var(--sidebar
 
 .card-subline.is-single{justify-content:flex-start}
 @media(max-width:1050px){.control-row{grid-template-columns:1fr 1fr}.range-control{grid-column:1/-1}.owned-toggle{justify-content:center}}
+
+/* Reference-video layout: large control stage and full-height deck rail */
+:root{--sidebar:260px}
+.app-shell{grid-template-columns:minmax(0,1fr) var(--sidebar)}
+.sidebar{
+  left:auto;
+  right:0;
+  width:var(--sidebar);
+  height:100vh;
+  min-height:100dvh;
+  padding:24px 20px;
+  border-right:0;
+  border-left:1px solid #25222a;
+  background:linear-gradient(180deg,#0b0a0d 0%,#070709 100%);
+  box-shadow:-18px 0 45px rgba(0,0,0,.28);
+}
+.workspace{grid-column:1;padding:0 26px 70px}
+.topbar{
+  min-height:25vh;
+  padding:24px 0;
+  margin-bottom:20px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:14px;
+}
+.search-box{height:52px;padding:0 16px;border-radius:7px}
+.search-box input{font-size:14px}
+.control-row{
+  display:grid;
+  grid-template-columns:minmax(280px,1fr) minmax(210px,auto) minmax(150px,auto) minmax(165px,auto);
+  gap:14px;
+  margin-top:0;
+}
+.range-control,.select-control{font-size:11px;gap:9px}
+.range-control{min-width:280px}
+.range-control input{width:min(230px,60%);height:5px}
+.select-control select,.owned-toggle{height:44px;border-radius:7px;font-size:12px}
+.select-control select{padding:0 38px 0 13px}
+.owned-toggle{padding:0 14px;gap:9px}
+.filter-groups{margin-top:0;gap:10px}
+.filter-title{min-width:50px;padding-top:9px;font-size:10px}
+.filter-pills{gap:7px}
+.filter-pill{padding:8px 12px;border-radius:6px;font-size:11px}
+.brand-mark{width:40px;height:40px;font-size:13px}
+.brand strong{font-size:13px}.brand small{font-size:9px}
+.sidebar-action{padding:10px;font-size:10px}
+.sidebar-section{padding:18px 0}
+.section-label span,.section-label strong,.section-label small{font-size:10px}
+.team-list{gap:9px}
+.team-slot{grid-template-columns:42px minmax(0,1fr) 24px;min-height:54px;padding:5px;border-radius:7px}
+.team-slot img{width:42px;height:42px;border-radius:5px}
+.team-slot strong{font-size:10px}.team-slot small{font-size:8px}
+.team-remove{width:24px;height:24px}
+.totals-section div{font-size:10px}
+@media(max-width:1150px){
+  :root{--sidebar:220px}
+  .control-row{grid-template-columns:1fr 1fr}
+  .range-control{grid-column:1/-1}
+  .owned-toggle{justify-content:center}
+}
+@media(max-width:680px){
+  :root{--sidebar:0px}
+  .app-shell{display:flex;flex-direction:column}
+  .sidebar{position:relative;order:2;right:auto;width:100%;height:auto;min-height:0;border-left:0;border-top:1px solid #25222a}
+  .workspace{order:1;width:100%;padding:0 12px 35px}
+  .topbar{min-height:auto;padding:16px 0}
+  .control-row{grid-template-columns:1fr}
+  .range-control{grid-column:auto}
+}
