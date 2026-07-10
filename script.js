@@ -480,6 +480,181 @@ function showToast(message) {
 
 
 let referenceSignaturePromise = null;
+let ocrWorkerPromise = null;
+
+
+async function getOCRWorker() {
+  if (ocrWorkerPromise) return ocrWorkerPromise;
+  if (!window.Tesseract) throw new Error("The local OCR helper could not be loaded. Check the connection and try again.");
+  ocrWorkerPromise = (async () => {
+    const worker = await window.Tesseract.createWorker("eng", 1, {
+      logger: (message) => {
+        if (message.status && typeof message.progress === "number") {
+          els.scanProgressText.textContent = `Reading card odds… ${Math.round(message.progress * 100)}%`;
+        }
+      }
+    });
+    await worker.setParameters({
+      tessedit_pageseg_mode: window.Tesseract.PSM.SINGLE_LINE,
+      tessedit_char_whitelist: "0123456789,/",
+      preserve_interword_spaces: "1"
+    });
+    return worker;
+  })();
+  return ocrWorkerPromise;
+}
+
+function createOddsCanvas(image, cell, binary = false) {
+  const sx = cell.x + cell.width * 0.11;
+  const sy = cell.y + cell.height * 0.72;
+  const sw = cell.width * 0.86;
+  const sh = cell.height * 0.25;
+  const scale = 4;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(sw * scale));
+  canvas.height = Math.max(1, Math.round(sh * scale));
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.imageSmoothingEnabled = true;
+  context.drawImage(image, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  if (binary) {
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const pixels = imageData.data;
+    for (let index = 0; index < pixels.length; index += 4) {
+      const red = pixels[index];
+      const green = pixels[index + 1];
+      const blue = pixels[index + 2];
+      const luminance = red * 0.299 + green * 0.587 + blue * 0.114;
+      const saturationRange = Math.max(red, green, blue) - Math.min(red, green, blue);
+      const value = luminance > 105 && saturationRange < 95 ? 255 : 0;
+      pixels[index] = value;
+      pixels[index + 1] = value;
+      pixels[index + 2] = value;
+      pixels[index + 3] = 255;
+    }
+    context.putImageData(imageData, 0, 0);
+  }
+  return canvas;
+}
+
+function parseOddsText(text) {
+  const groups = String(text || "").match(/\d[\d,]*/g) || [];
+  const values = groups
+    .map((group) => group.replaceAll(",", ""))
+    .filter((group) => group.length > 1)
+    .map((group) => Number(group))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  if (!values.length) return 0;
+  return values.sort((left, right) => String(right).length - String(left).length)[0];
+}
+
+async function recognizeDisplayedOdds(worker, image, cell, binary = false) {
+  const canvas = createOddsCanvas(image, cell, binary);
+  const result = await worker.recognize(canvas);
+  return {
+    odds: parseOddsText(result.data.text),
+    text: String(result.data.text || "").trim(),
+    confidence: Number(result.data.confidence || 0)
+  };
+}
+
+function rgbHue(red, green, blue) {
+  const r = red / 255;
+  const g = green / 255;
+  const b = blue / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const difference = max - min;
+  if (!difference) return { hue: 0, saturation: 0, value: max };
+  let hue;
+  if (max === r) hue = 60 * (((g - b) / difference) % 6);
+  else if (max === g) hue = 60 * ((b - r) / difference + 2);
+  else hue = 60 * ((r - g) / difference + 4);
+  if (hue < 0) hue += 360;
+  return { hue, saturation: difference / max, value: max };
+}
+
+function detectScreenshotBorders(image, cell) {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(cell.width));
+  canvas.height = Math.max(1, Math.round(cell.height));
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(image, cell.x, cell.y, cell.width, cell.height, 0, 0, canvas.width, canvas.height);
+  const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
+  const thickness = Math.max(4, Math.round(Math.min(width, height) * 0.04));
+  const counts = { Shiny: 0, Diamond: 0, Radiant: 0 };
+  let perimeterPixels = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (x > thickness && x < width - thickness && y > thickness && y < height - thickness) continue;
+      const offset = (y * width + x) * 4;
+      const color = rgbHue(data[offset], data[offset + 1], data[offset + 2]);
+      if (color.saturation > 0.45 && color.value > 0.42) {
+        if (color.hue >= 38 && color.hue <= 75) counts.Shiny += 1;
+        if (color.hue >= 175 && color.hue <= 225) counts.Diamond += 1;
+        if (color.hue >= 250 && color.hue <= 340) counts.Radiant += 1;
+      }
+      perimeterPixels += 1;
+    }
+  }
+  const ratios = Object.fromEntries(Object.entries(counts).map(([name, count]) => [name, count / Math.max(1, perimeterPixels)]));
+  const strongest = Math.max(...Object.values(ratios));
+  if (strongest < 0.05) return [];
+  return getBorderDefs()
+    .map((border) => border.name)
+    .filter((name) => ratios[name] >= 0.035 && ratios[name] >= strongest * 0.22);
+}
+
+function screenshotBorderMultiplier(borderNames) {
+  const selected = new Set(borderNames);
+  return getBorderDefs().reduce((multiplier, border) => {
+    return selected.has(border.name) ? multiplier * Number(border.chance || 1) : multiplier;
+  }, 1);
+}
+
+function matchCardUsingOdds(signature, references, recognition, borderNames) {
+  if (!recognition.odds) {
+    const visual = bestCardMatches(signature, references);
+    return { ...visual, relativeError: Infinity, method: "Artwork fallback" };
+  }
+  const multiplier = screenshotBorderMultiplier(borderNames);
+  const targets = [{ odds: recognition.odds / multiplier, adjusted: multiplier > 1 }];
+  if (multiplier > 1) targets.push({ odds: recognition.odds, adjusted: false });
+
+  const ranked = [];
+  for (const target of targets) {
+    for (const card of state.cards) {
+      const relativeError = Math.abs(Math.log(Math.max(1, Number(card.odds)) / Math.max(1, target.odds)));
+      ranked.push({ card, relativeError, adjusted: target.adjusted, targetOdds: target.odds });
+    }
+  }
+  ranked.sort((left, right) => left.relativeError - right.relativeError);
+  const closest = ranked[0];
+  const candidates = ranked.filter((candidate) => {
+    return candidate.adjusted === closest.adjusted && candidate.relativeError <= closest.relativeError + 0.035;
+  });
+  let selected = closest;
+  if (candidates.length > 1) {
+    const referenceMap = new Map(references.map((reference) => [reference.card.id, reference]));
+    selected = candidates
+      .map((candidate) => ({
+        ...candidate,
+        artDistance: referenceMap.has(candidate.card.id)
+          ? signatureDistance(signature, referenceMap.get(candidate.card.id).signature)
+          : Infinity
+      }))
+      .sort((left, right) => left.artDistance - right.artDistance)[0];
+  }
+  const errorPenalty = Math.min(70, selected.relativeError * 400);
+  const ocrPenalty = Math.max(0, 70 - recognition.confidence) * 0.15;
+  return {
+    card: selected.card,
+    confidence: Math.round(Math.max(10, Math.min(99, 98 - errorPenalty - ocrPenalty))),
+    relativeError: selected.relativeError,
+    method: selected.adjusted && borderNames.length
+      ? `Odds ÷ ${borderNames.join(" × ")}`
+      : "Odds"
+  };
+}
 
 function loadImageSource(source) {
   return new Promise((resolve, reject) => {
@@ -716,7 +891,7 @@ function renderScanReview() {
         <img src="${result.preview}" alt="Detected inventory card ${index + 1}">
         <div class="scan-result-fields">
           <label>Matched card<select data-scan-card="${index}">${selectedOptions}</select></label>
-          <span class="scan-confidence ${confidenceClass}">${result.confidence}% visual confidence</span>
+          <span class="scan-confidence ${confidenceClass}">${result.confidence}% match confidence</span>\n          <span class="scan-method">${escapeHTML(result.method)}${result.displayedOdds ? ` · Read 1/${formatNumber(result.displayedOdds)}` : ""}${result.detectedBorders.length ? ` · ${escapeHTML(result.detectedBorders.join(" + "))}` : ""}</span>
         </div>
         <label class="scan-quantity">Copies<input data-scan-quantity="${index}" type="number" min="1" max="99" value="${result.quantity}"></label>
       </div>
@@ -737,18 +912,18 @@ async function scanInventoryImage(file) {
   els.scanProgress.hidden = false;
   els.scanProgressText.textContent = "Finding cards in the screenshot…";
   els.scanResults.innerHTML = "";
-  els.scanSummary.textContent = "The screenshot is processed locally in your browser.";
+  els.scanSummary.textContent = "Reading exact odds and border colors locally in your browser.";
   els.scanAdd.disabled = true;
   els.scanReplace.disabled = true;
   try {
     const image = await loadImageFile(file);
     const cells = detectInventoryCells(image);
-    const references = await getReferenceSignatures();
+    const [references, worker] = await Promise.all([getReferenceSignatures(), getOCRWorker()]);
     if (!references.length) throw new Error("Local reference card images could not be loaded.");
     const results = [];
     for (let index = 0; index < cells.length; index += 1) {
       const cell = cells[index];
-      els.scanProgressText.textContent = `Matching card ${index + 1}/${cells.length}…`;
+      els.scanProgressText.textContent = `Reading odds ${index + 1}/${cells.length}…`;
       const signature = imageSignature(
         image,
         cell.x + cell.width * 0.05,
@@ -756,12 +931,25 @@ async function scanInventoryImage(file) {
         cell.width * 0.9,
         cell.height * 0.72
       );
-      const match = bestCardMatches(signature, references);
+      const detectedBorders = detectScreenshotBorders(image, cell);
+      let recognition = await recognizeDisplayedOdds(worker, image, cell, false);
+      let match = matchCardUsingOdds(signature, references, recognition, detectedBorders);
+      if (!recognition.odds || match.relativeError > 0.065) {
+        const binaryRecognition = await recognizeDisplayedOdds(worker, image, cell, true);
+        const binaryMatch = matchCardUsingOdds(signature, references, binaryRecognition, detectedBorders);
+        if (binaryMatch.relativeError < match.relativeError) {
+          recognition = binaryRecognition;
+          match = binaryMatch;
+        }
+      }
       results.push({
         cardId: match.card.id,
         confidence: match.confidence,
         quantity: detectQuantity(image, cell),
-        preview: cropPreview(image, cell)
+        preview: cropPreview(image, cell),
+        method: match.method,
+        displayedOdds: recognition.odds,
+        detectedBorders
       });
       await new Promise((resolve) => requestAnimationFrame(resolve));
     }
