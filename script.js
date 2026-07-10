@@ -480,8 +480,72 @@ function showToast(message) {
 
 
 let referenceSignaturePromise = null;
+let imageModelPromise = null;
 let ocrWorkerPromise = null;
 
+
+
+async function getImageModel() {
+  if (imageModelPromise) return imageModelPromise;
+  if (!window.tf || !window.mobilenet) {
+    throw new Error("The image-comparison model could not be loaded. Check the connection and try again.");
+  }
+  imageModelPromise = (async () => {
+    els.scanProgressText.textContent = "Loading image-comparison model…";
+    await window.tf.ready();
+    return window.mobilenet.load({ version: 2, alpha: 1.0 });
+  })();
+  return imageModelPromise;
+}
+
+function createFeatureCanvas(image, sx, sy, sw, sh) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 224;
+  canvas.height = 224;
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#000";
+  context.fillRect(0, 0, 224, 224);
+  context.drawImage(image, sx, sy, sw, sh, 0, 0, 224, 224);
+  return canvas;
+}
+
+async function imageEmbedding(model, canvas) {
+  const tensor = model.infer(canvas, true);
+  try {
+    const values = Array.from(await tensor.data());
+    const magnitude = Math.sqrt(values.reduce((total, value) => total + value * value, 0)) || 1;
+    return values.map((value) => value / magnitude);
+  } finally {
+    tensor.dispose();
+  }
+}
+
+function embeddingSimilarity(left, right) {
+  let total = 0;
+  const length = Math.min(left.length, right.length);
+  for (let index = 0; index < length; index += 1) total += left[index] * right[index];
+  return total;
+}
+
+function matchCardByImage(embedding, references) {
+  const ranking = references
+    .map((reference) => ({
+      card: reference.card,
+      similarity: embeddingSimilarity(embedding, reference.embedding)
+    }))
+    .sort((left, right) => right.similarity - left.similarity);
+  const best = ranking[0];
+  const second = ranking[1] || { similarity: best.similarity - 0.08 };
+  const absoluteScore = Math.max(0, Math.min(1, (best.similarity - 0.42) / 0.48));
+  const separationScore = Math.max(0, Math.min(1, (best.similarity - second.similarity) / 0.08));
+  const confidence = Math.round(Math.max(10, Math.min(90, 10 + absoluteScore * 50 + separationScore * 30)));
+  return {
+    card: best.card,
+    confidence,
+    method: "Neural image resemblance",
+    alternatives: ranking.slice(1, 4).map((candidate) => candidate.card.name)
+  };
+}
 
 async function getOCRWorker() {
   if (ocrWorkerPromise) return ocrWorkerPromise;
@@ -787,26 +851,25 @@ function signatureDistance(left, right) {
 async function getReferenceSignatures() {
   if (referenceSignaturePromise) return referenceSignaturePromise;
   referenceSignaturePromise = (async () => {
+    const model = await getImageModel();
     const references = [];
-    for (let start = 0; start < state.cards.length; start += 12) {
-      const batch = state.cards.slice(start, start + 12);
-      const loaded = await Promise.all(batch.map(async (card) => {
-        try {
-          const image = await loadImageSource(imageURL(card));
-          return {
-            card,
-            signature: [
-              ...imageSignature(image, image.width * 0.07, image.height * 0.14, image.width * 0.86, image.height * 0.26),
-              ...imageSignature(image, image.width * 0.07, image.height * 0.14, image.width * 0.86, image.height * 0.26),
-              ...imageSignature(image, image.width * 0.05, image.height * 0.08, image.width * 0.9, image.height * 0.46)
-            ]
-          };
-        } catch {
-          return null;
-        }
-      }));
-      references.push(...loaded.filter(Boolean));
-      els.scanProgressText.textContent = `Preparing card references… ${Math.min(start + batch.length, state.cards.length)}/${state.cards.length}`;
+    for (let index = 0; index < state.cards.length; index += 1) {
+      const card = state.cards[index];
+      try {
+        const image = await loadImageSource(imageURL(card));
+        const canvas = createFeatureCanvas(
+          image,
+          image.width * 0.06,
+          image.height * 0.1,
+          image.width * 0.88,
+          image.height * 0.34
+        );
+        references.push({ card, embedding: await imageEmbedding(model, canvas) });
+      } catch (error) {
+        console.warn(`Could not prepare image reference for ${card.name}`, error);
+      }
+      els.scanProgressText.textContent = `Comparing local card artwork… ${index + 1}/${state.cards.length}`;
+      if (index % 4 === 0) await new Promise((resolve) => requestAnimationFrame(resolve));
     }
     return references;
   })();
@@ -941,61 +1004,38 @@ async function scanInventoryImage(file) {
   els.scanProgress.hidden = false;
   els.scanProgressText.textContent = "Finding cards in the screenshot…";
   els.scanResults.innerHTML = "";
-  els.scanSummary.textContent = "Reading exact odds and border colors locally in your browser.";
+  els.scanSummary.textContent = "Comparing each inventory image against all 135 local card images.";
   els.scanAdd.disabled = true;
   els.scanReplace.disabled = true;
   try {
     const image = await loadImageFile(file);
     const cells = detectInventoryCells(image);
-    const [references, worker] = await Promise.all([getReferenceSignatures(), getOCRWorker()]);
+    const references = await getReferenceSignatures();
+    const model = await getImageModel();
     if (!references.length) throw new Error("Local reference card images could not be loaded.");
     const results = [];
     for (let index = 0; index < cells.length; index += 1) {
       const cell = cells[index];
-      els.scanProgressText.textContent = `Reading odds ${index + 1}/${cells.length}…`;
-      const signature = [
-        ...imageSignature(
-          image,
-          cell.x + cell.width * 0.07,
-          cell.y + cell.height * 0.14,
-          cell.width * 0.86,
-          cell.height * 0.26
-        ),
-        ...imageSignature(
-          image,
-          cell.x + cell.width * 0.07,
-          cell.y + cell.height * 0.14,
-          cell.width * 0.86,
-          cell.height * 0.26
-        ),
-        ...imageSignature(
-          image,
-          cell.x + cell.width * 0.05,
-          cell.y + cell.height * 0.08,
-          cell.width * 0.9,
-          cell.height * 0.46
-        )
-      ];
+      els.scanProgressText.textContent = `Comparing card ${index + 1}/${cells.length}…`;
+      const canvas = createFeatureCanvas(
+        image,
+        cell.x + cell.width * 0.06,
+        cell.y + cell.height * 0.1,
+        cell.width * 0.88,
+        cell.height * 0.34
+      );
+      const embedding = await imageEmbedding(model, canvas);
+      const match = matchCardByImage(embedding, references);
       const detectedBorders = detectScreenshotBorders(image, cell);
-      let recognition = await recognizeDisplayedOdds(worker, image, cell, false);
-      let match = matchCardUsingOdds(signature, references, recognition);
-      if (!recognition.odds || match.relativeError > 0.065) {
-        const binaryRecognition = await recognizeDisplayedOdds(worker, image, cell, true);
-        const binaryMatch = matchCardUsingOdds(signature, references, binaryRecognition);
-        if (binaryMatch.relativeError < match.relativeError) {
-          recognition = binaryRecognition;
-          match = binaryMatch;
-        }
-      }
       results.push({
         cardId: match.card.id,
         confidence: match.confidence,
         quantity: detectQuantity(image, cell),
         preview: cropPreview(image, cell),
         method: match.method,
-        displayedOdds: recognition.odds,
+        displayedOdds: 0,
         detectedBorders,
-        matchedCombination: match.combination,
+        matchedCombination: [],
         alternatives: match.alternatives
       });
       await new Promise((resolve) => requestAnimationFrame(resolve));
