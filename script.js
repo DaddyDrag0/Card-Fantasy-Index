@@ -12,7 +12,7 @@ const state = {
   query: "",
   source: "all",
   sort: "odds-asc",
-  border: "Base",
+  selectedBorders: new Set(),
   ownedOnly: false,
   selectedId: null,
   collection: {},
@@ -27,7 +27,7 @@ const els = {
   searchInput: document.querySelector("#searchInput"),
   sizeRange: document.querySelector("#sizeRange"),
   sortSelect: document.querySelector("#sortSelect"),
-  borderSelect: document.querySelector("#borderSelect"),
+  borderControls: document.querySelector("#borderControls"),
   ownedOnly: document.querySelector("#ownedOnly"),
   sourceFilters: document.querySelector("#sourceFilters"),
   ownedSummary: document.querySelector("#ownedSummary"),
@@ -42,6 +42,7 @@ const els = {
   clearCollectionButton: document.querySelector("#clearCollectionButton"),
   cardModal: document.querySelector("#cardModal"),
   modalDialog: document.querySelector(".card-modal"),
+  modalImageWrap: document.querySelector(".modal-image-wrap"),
   modalClose: document.querySelector("#modalClose"),
   modalImage: document.querySelector("#modalImage"),
   modalImageFallback: document.querySelector("#modalImageFallback"),
@@ -111,65 +112,63 @@ function accentForCard(card) {
   return "#8d4dff";
 }
 
-function getBorderOptions() {
-  const combos = state.meta.variantCombos || [];
-  if (combos.length) return combos;
-  return [
-    { name: "Base", variants: [] },
-    ...(state.meta.variants || []).map((variant) => ({ name: variant.name, variants: [variant.name] }))
-  ];
+function getBorderDefs() {
+  return state.meta.variants || [];
 }
 
-function getBorderDefinition(name = state.border) {
-  const combo = getBorderOptions().find((option) => option.name === name);
-  const variantNames = combo?.variants || (name === "Base" ? [] : [name]);
-  const definitions = variantNames
-    .map((variantName) => (state.meta.variants || []).find((variant) => variant.name === variantName))
-    .filter(Boolean);
-  if (!definitions.length) return null;
-  return {
-    name,
-    variants: variantNames,
-    definitions,
-    chance: definitions.reduce((total, definition) => total * Number(definition.chance || 1), 1),
-    colors: definitions.map((definition) => definition.color || "#8d4dff"),
-    color: definitions[0].color || "#8d4dff"
-  };
+function orderBorderNames(names = state.selectedBorders) {
+  const selected = new Set(names);
+  return getBorderDefs().map((border) => border.name).filter((name) => selected.has(name));
 }
 
-function borderVisualStyle(name = state.border) {
-  const border = getBorderDefinition(name);
-  if (!border) return "";
-  const colors = border.colors;
-  const gradient = colors.length === 1
-    ? `linear-gradient(135deg, ${colors[0]}, ${colors[0]})`
-    : `linear-gradient(135deg, ${colors.map((color, index) => `${color} ${Math.round((index / (colors.length - 1)) * 100)}%`).join(", ")})`;
-  return `--border-primary:${colors[0]};--border-glow:${colors[colors.length - 1]};--border-gradient:${gradient};`;
+function selectedBorderNames() {
+  return orderBorderNames(state.selectedBorders);
 }
 
-function applyBorderHighlight(element, name = state.border) {
+function borderMultiplierFromNames(names = state.selectedBorders) {
+  const selected = new Set(names);
+  return getBorderDefs().reduce((multiplier, border) => {
+    return selected.has(border.name) ? multiplier * Number(border.chance || 1) : multiplier;
+  }, 1);
+}
+
+function borderColorList(names = state.selectedBorders) {
+  const selected = new Set(orderBorderNames(names));
+  return getBorderDefs()
+    .filter((border) => selected.has(border.name))
+    .map((border) => border.color || "#8d4dff");
+}
+
+function modifierColorValue(names = state.selectedBorders) {
+  const colors = borderColorList(names);
+  if (!colors.length) return "";
+  if (colors.length === 1) return [colors[0], colors[0], colors[0]].join(", ");
+  return [...colors, colors[0]].join(", ");
+}
+
+function borderVisualStyle(names = state.selectedBorders) {
+  const colors = borderColorList(names);
+  if (!colors.length) return "";
+  return `--modifier-colors:${modifierColorValue(names)};--border-primary:${colors[0]};--border-glow:${colors[colors.length - 1]};`;
+}
+
+function applyBorderHighlight(element, names = state.selectedBorders) {
   if (!element) return;
-  const active = name !== "Base" && Boolean(getBorderDefinition(name));
-  element.classList.toggle("has-border", active);
-  if (active) {
-    const border = getBorderDefinition(name);
-    const colors = border.colors;
-    const gradient = colors.length === 1
-      ? `linear-gradient(135deg, ${colors[0]}, ${colors[0]})`
-      : `linear-gradient(135deg, ${colors.map((color, index) => `${color} ${Math.round((index / (colors.length - 1)) * 100)}%`).join(", ")})`;
+  const colors = borderColorList(names);
+  element.classList.toggle("has-modifiers", colors.length > 0);
+  if (colors.length) {
+    element.style.setProperty("--modifier-colors", modifierColorValue(names));
     element.style.setProperty("--border-primary", colors[0]);
     element.style.setProperty("--border-glow", colors[colors.length - 1]);
-    element.style.setProperty("--border-gradient", gradient);
   } else {
+    element.style.removeProperty("--modifier-colors");
     element.style.removeProperty("--border-primary");
     element.style.removeProperty("--border-glow");
-    element.style.removeProperty("--border-gradient");
   }
 }
 
-function statsForCard(card, borderName = state.border) {
-  const border = getBorderDefinition(borderName);
-  const borderChance = border ? Number(border.chance || 1) : 1;
+function statsForCard(card, borders = state.selectedBorders) {
+  const borderChance = borderMultiplierFromNames(borders);
   const odds = Math.max(1, Number(card.odds || 1) * borderChance);
   const rawHP = Math.floor(Math.pow(2, Math.log10(odds)) * 20);
   const rawATK = Math.floor(rawHP / 3);
@@ -189,7 +188,7 @@ function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
     collection: state.collection,
     team: state.team,
-    border: state.border,
+    selectedBorders: selectedBorderNames(),
     cardSize: Number(els.sizeRange.value || 190)
   }));
 }
@@ -199,7 +198,11 @@ function loadSavedState() {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY) || "{}");
     if (saved.collection && typeof saved.collection === "object") state.collection = saved.collection;
     if (Array.isArray(saved.team)) state.team = saved.team.slice(0, MAX_TEAM_SIZE);
-    if (typeof saved.border === "string") state.border = saved.border;
+    if (Array.isArray(saved.selectedBorders)) {
+      state.selectedBorders = new Set(saved.selectedBorders);
+    } else if (typeof saved.border === "string" && saved.border !== "Base") {
+      state.selectedBorders = new Set(saved.border.split(" + "));
+    }
     if (Number(saved.cardSize)) {
       els.sizeRange.value = String(saved.cardSize);
       document.documentElement.style.setProperty("--card-size", `${saved.cardSize}px`);
@@ -239,7 +242,7 @@ function cardHTML(card) {
   const owned = ownedCount(card.id);
   const accent = accentForCard(card);
   return `
-    <button class="card-tile ${state.border !== "Base" ? "has-border" : ""}" type="button" data-card-id="${escapeHTML(card.id)}" style="--accent:${accent};${borderVisualStyle()}">
+    <button class="card-tile ${state.selectedBorders.size ? "has-modifiers" : ""}" type="button" data-card-id="${escapeHTML(card.id)}" style="--accent:${accent};${borderVisualStyle()}">
       <span class="card-image-frame">
         <span class="card-fallback">${escapeHTML(card.name)}</span>
         <img src="${imageURL(card)}" alt="${escapeHTML(card.name)}" loading="lazy" decoding="async" onload="this.previousElementSibling.hidden=true" onerror="this.hidden=true">
@@ -280,10 +283,11 @@ function renderFilters() {
   renderPills(els.sourceFilters, sources, state.source, "source");
 }
 
-function renderBorderOptions() {
-  const names = getBorderOptions().map((option) => option.name);
-  if (!names.includes(state.border)) state.border = "Base";
-  els.borderSelect.innerHTML = names.map((name) => `<option value="${escapeHTML(name)}" ${name === state.border ? "selected" : ""}>${escapeHTML(name)}</option>`).join("");
+function renderBorderControls() {
+  els.borderControls.innerHTML = getBorderDefs().map((border) => {
+    const active = state.selectedBorders.has(border.name);
+    return `<button class="modifier-button ${active ? "is-active" : ""}" type="button" data-border="${escapeHTML(border.name)}" style="--chip-color:${escapeHTML(border.color || "#8d4dff")}"><span>${escapeHTML(border.name)}</span><small>${escapeHTML(border.chanceLabel || "")}</small></button>`;
+  }).join("");
 }
 
 function updateCollectionSummary() {
@@ -313,7 +317,7 @@ function renderTeam() {
     totalHP += stats.hp;
     totalATK += stats.atk;
     slots.push(`
-      <div class="team-slot ${state.border !== "Base" ? "has-border" : ""}" data-team-id="${escapeHTML(card.id)}" style="${borderVisualStyle()}">
+      <div class="team-slot ${state.selectedBorders.size ? "has-modifiers" : ""}" data-team-id="${escapeHTML(card.id)}" style="${borderVisualStyle()}">
         <img src="${imageURL(card)}" alt="" onerror="this.style.visibility='hidden'">
         <span><strong>${escapeHTML(card.name)}</strong><small>${formatNumber(stats.hp)} HP · ${formatNumber(stats.atk)} ATK</small></span>
         <button class="team-remove" type="button" data-team-remove="${escapeHTML(card.id)}" aria-label="Remove ${escapeHTML(card.name)}">×</button>
@@ -337,7 +341,7 @@ function renderModal() {
   const stats = statsForCard(card);
   const owned = ownedCount(card.id);
   const inTeam = state.team.includes(card.id);
-  const border = getBorderDefinition();
+  const selectedNames = selectedBorderNames();
 
   els.modalSource.textContent = sourceName(card);
   els.modalName.textContent = card.name;
@@ -349,7 +353,7 @@ function renderModal() {
   els.modalTags.innerHTML = [
     titleCase(card.ability || card.abilityType || "No ability"),
     card.source || sourceName(card),
-    state.border
+    selectedNames.length ? selectedNames.join(" + ") : "Base"
   ].map((tag) => `<span class="modal-tag">${escapeHTML(tag)}</span>`).join("");
 
   els.modalImage.hidden = false;
@@ -361,11 +365,9 @@ function renderModal() {
     els.modalImageFallback.hidden = false;
   };
 
-  const borderNames = getBorderOptions().map((option) => option.name);
-  els.modalBorderControls.innerHTML = borderNames.map((name) => {
-    const definition = getBorderDefinition(name);
-    const color = definition?.color || "#8d4dff";
-    return `<button class="border-button ${definition ? "has-combo" : ""} ${state.border === name ? "is-active" : ""}" type="button" data-modal-border="${escapeHTML(name)}" style="--border-color:${color};${borderVisualStyle(name)}">${escapeHTML(name)}</button>`;
+  els.modalBorderControls.innerHTML = getBorderDefs().map((border) => {
+    const active = state.selectedBorders.has(border.name);
+    return `<button class="modifier-button ${active ? "is-active" : ""}" type="button" data-modal-border="${escapeHTML(border.name)}" style="--chip-color:${escapeHTML(border.color || "#8d4dff")}"><span>${escapeHTML(border.name)}</span><small>${escapeHTML(border.chanceLabel || "")}</small></button>`;
   }).join("");
 
   els.removeCopyButton.disabled = owned <= 0;
@@ -374,7 +376,7 @@ function renderModal() {
   els.teamButton.disabled = !inTeam && (owned <= 0 || state.team.length >= MAX_TEAM_SIZE);
 
   applyBorderHighlight(els.modalDialog);
-  if (border) document.documentElement.style.setProperty("--active-border", border.color || "#8d4dff");
+  applyBorderHighlight(els.modalImageWrap);
 }
 
 function openModal(id) {
@@ -424,6 +426,16 @@ function changeOwned(id, amount) {
   renderTeam();
   renderModal();
   if (state.ownedOnly && next === 0) renderGrid();
+}
+
+function toggleBorder(borderName) {
+  if (state.selectedBorders.has(borderName)) state.selectedBorders.delete(borderName);
+  else state.selectedBorders.add(borderName);
+  saveState();
+  renderBorderControls();
+  updateVisibleStats();
+  renderTeam();
+  if (!els.cardModal.hidden) renderModal();
 }
 
 function toggleTeam(id) {
@@ -512,12 +524,10 @@ function bindEvents() {
     renderGrid();
   });
 
-  els.borderSelect.addEventListener("change", (event) => {
-    state.border = event.target.value;
-    saveState();
-    updateVisibleStats();
-    renderTeam();
-    if (!els.cardModal.hidden) renderModal();
+  els.borderControls.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-border]");
+    if (!button) return;
+    toggleBorder(button.dataset.border);
   });
 
   els.ownedOnly.addEventListener("change", (event) => {
@@ -546,12 +556,7 @@ function bindEvents() {
   els.modalBorderControls.addEventListener("click", (event) => {
     const button = event.target.closest("[data-modal-border]");
     if (!button) return;
-    state.border = button.dataset.modalBorder;
-    els.borderSelect.value = state.border;
-    saveState();
-    updateVisibleStats();
-    renderTeam();
-    renderModal();
+    toggleBorder(button.dataset.modalBorder);
   });
 
   els.addCopyButton.addEventListener("click", () => {
@@ -629,7 +634,7 @@ async function init() {
   try {
     await loadCards();
     state.team = state.team.filter((id) => state.cards.some((card) => card.id === id) && ownedCount(id) > 0).slice(0, MAX_TEAM_SIZE);
-    renderBorderOptions();
+    renderBorderControls();
     renderFilters();
     updateCollectionSummary();
     renderTeam();
