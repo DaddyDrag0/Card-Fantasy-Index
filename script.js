@@ -43,7 +43,7 @@ const els = {
   modalClose: document.querySelector("#modalClose"),
   modalImage: document.querySelector("#modalImage"),
   modalImageFallback: document.querySelector("#modalImageFallback"),
-  modalTier: document.querySelector("#modalTier"),
+  modalSource: document.querySelector("#modalSource"),
   modalName: document.querySelector("#modalName"),
   modalAbility: document.querySelector("#modalAbility"),
   modalTags: document.querySelector("#modalTags"),
@@ -286,7 +286,7 @@ function renderModal() {
   const inTeam = state.team.includes(card.id);
   const border = getBorderDefinition();
 
-  els.modalTier.textContent = sourceName(card);
+  els.modalSource.textContent = sourceName(card);
   els.modalName.textContent = card.name;
   els.modalAbility.textContent = card.abilityDescription || "No ability description available.";
   els.modalHP.textContent = formatNumber(stats.hp);
