@@ -134,3 +134,61 @@ button{color:inherit}.app-shell{display:grid;grid-template-columns:var(--sidebar
   .control-row{grid-template-columns:1fr}
   .range-control{grid-column:auto}
 }
+
+/* Corrected left-side layout with intentionally larger controls */
+:root{--sidebar:360px}
+.app-shell{grid-template-columns:var(--sidebar) minmax(0,1fr)}
+.sidebar{
+  left:0;
+  right:auto;
+  width:var(--sidebar);
+  height:100vh;
+  min-height:100dvh;
+  padding:30px 26px;
+  border-left:0;
+  border-right:1px solid #2c2831;
+  box-shadow:18px 0 50px rgba(0,0,0,.3);
+}
+.workspace{grid-column:2;padding:0 34px 80px}
+.topbar{min-height:28vh;padding:30px 0;gap:18px}
+.search-box{height:62px;padding:0 20px;border-width:2px;border-radius:9px}
+.search-box span{font-size:22px}
+.search-box input{font-size:16px}
+.control-row{grid-template-columns:minmax(340px,1fr) minmax(240px,auto) minmax(180px,auto) minmax(200px,auto);gap:18px}
+.range-control,.select-control{font-size:13px;gap:12px}
+.range-control{min-width:340px}
+.range-control input{width:min(270px,64%);height:6px}
+.select-control select,.owned-toggle{height:52px;font-size:14px;border-radius:9px}
+.select-control select{padding:0 44px 0 16px}
+.owned-toggle{padding:0 17px}
+.owned-toggle input{width:18px;height:18px}
+.filter-title{min-width:66px;padding-top:11px;font-size:12px}
+.filter-pills{gap:9px}
+.filter-pill{padding:10px 16px;font-size:13px;border-radius:8px}
+.brand{gap:14px;margin-bottom:26px}.brand-mark{width:52px;height:52px;font-size:16px}
+.brand strong{font-size:17px}.brand small{font-size:11px}
+.sidebar-action{padding:13px;font-size:12px}
+.sidebar-section{padding:22px 0}
+.section-label span,.section-label strong,.section-label small{font-size:12px}
+.team-list{gap:12px}
+.team-slot{grid-template-columns:56px minmax(0,1fr) 28px;min-height:70px;padding:7px;border-radius:9px}
+.team-slot img{width:56px;height:56px;border-radius:7px}
+.team-slot strong{font-size:13px}.team-slot small{font-size:10px}
+.team-slot.is-empty{font-size:11px}
+.team-remove{width:28px;height:28px}
+.totals-section div{font-size:13px}
+@media(max-width:1450px){
+  :root{--sidebar:310px}
+  .control-row{grid-template-columns:1fr 1fr}
+  .range-control{grid-column:1/-1}
+  .owned-toggle{justify-content:center}
+}
+@media(max-width:680px){
+  :root{--sidebar:0px}
+  .app-shell{display:flex;flex-direction:column}
+  .sidebar{position:relative;order:2;left:auto;width:100%;height:auto;min-height:0;border-right:0;border-top:1px solid #2c2831}
+  .workspace{order:1;grid-column:auto;width:100%;padding:0 14px 40px}
+  .topbar{min-height:auto;padding:18px 0}
+  .control-row{grid-template-columns:1fr}
+  .range-control{grid-column:auto;min-width:0}
+}
