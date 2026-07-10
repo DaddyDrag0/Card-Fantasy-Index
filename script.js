@@ -5,12 +5,30 @@ const CARD_PARTS = Array.from({ length: 7 }, (_, index) => `data/cards-${index +
 const STORAGE_KEY = "cf-deck-builder-state-v1";
 const LEGACY_STORAGE_KEY = "card-fantasy-index-state-v1";
 const MAX_TEAM_SIZE = 4;
+const SUPPORT_CARD_IDS = new Set([
+  "peasant", "druid", "pixie", "paladin-guardian", "spirit-caller", "life-tree",
+  "sand-wraith", "soul-warden", "arcane-construct", "storm-dragon", "death-tree",
+  "bone-drake", "celestial-ruler", "shroom-paladin", "blue-shroomage",
+  "shroom-commander", "green-shroomage", "bear", "flower-lord", "flower-guardian",
+  "snow-beast", "cthulhu", "grave-guardian", "orc-warrior", "orc-shaman",
+  "ice-golem", "ice-dragon", "the-overseer"
+]);
+const AOE_CARD_IDS = new Set([
+  "archer", "bone-mage", "mummy", "swamp-hydra", "deacon", "kraken", "diver",
+  "skeleton-king", "rift-destroyer", "star-titan", "behemoth", "rift-seraph",
+  "neptune", "shroom-spiderlings", "shroom-warrior", "red-shroomage",
+  "shroom-archer", "shroom-king", "wolf", "hellhound", "cerberus", "snow-mage",
+  "snow-husk", "moonlit-lizard", "abyssal-nightmare", "aeternus-the-abyssal-king",
+  "bandit-archer", "orc-king", "ember-mage", "fire-spirit", "heavenly-warrior",
+  "god-of-thunder"
+]);
 
 const state = {
   cards: [],
   meta: { variants: [] },
   query: "",
   source: "all",
+  role: "all",
   sort: "odds-asc",
   selectedBorders: new Set(),
   ownedOnly: false,
@@ -31,6 +49,7 @@ const els = {
   borderControls: document.querySelector("#borderControls"),
   ownedOnly: document.querySelector("#ownedOnly"),
   sourceFilters: document.querySelector("#sourceFilters"),
+  roleFilters: document.querySelector("#roleFilters"),
   ownedSummary: document.querySelector("#ownedSummary"),
   ownedProgress: document.querySelector("#ownedProgress"),
   teamList: document.querySelector("#teamList"),
@@ -105,6 +124,18 @@ function imageURL(card) {
 
 function sourceName(card) {
   return card.weather || "Base";
+}
+
+
+function cardRole(card) {
+  if (SUPPORT_CARD_IDS.has(card.id)) return "support";
+  if (AOE_CARD_IDS.has(card.id)) return "aoe";
+  const description = normalize(`${card.abilityType || ""} ${card.abilityDescription || ""}`);
+  const supportsAllies = /(all allies|allied team|grant allies|gives every ally|boosts entire team|next ally|fallen ally|active ally card|remaining allies|all poison-related allies|allies take|every ally deals|boosts all allies|two allies|current active ally|revives? .*ally|brings back .*ally)/.test(description);
+  if (supportsAllies) return "support";
+  const hitsMultiple = /(all enemies|two random enem|2 enemy|hit two enem|strikes two|attack twice|attacks twice|counterattack twice|attacks 3 times|strike all|pierce.*all|pierce.*next|splash.*next|next enemy card|spread to all enemy|simultaneously strike all)/.test(description);
+  if (hitsMultiple) return "aoe";
+  return "regular";
 }
 
 function accentForCard(card) {
@@ -234,8 +265,9 @@ function getVisibleCards() {
       card.weather
     ].join(" ")).includes(query);
     const matchesSource = state.source === "all" || sourceName(card) === state.source;
+    const matchesRole = state.role === "all" || cardRole(card) === state.role;
     const matchesOwned = !state.ownedOnly || ownedCount(card.id) > 0;
-    return matchesQuery && matchesSource && matchesOwned;
+    return matchesQuery && matchesSource && matchesRole && matchesOwned;
   });
 
   return [...filtered].sort((a, b) => {
@@ -259,7 +291,7 @@ function cardHTML(card) {
       </span>
       ${owned > 0 ? `<span class="card-owned-badge" data-owned-badge>${owned}</span>` : `<span class="card-owned-badge" data-owned-badge hidden>0</span>`}
       <h3>${escapeHTML(card.name)}</h3>
-      <p class="card-subline is-single"><span>${escapeHTML(sourceName(card))}</span></p>
+      <p class="card-subline"><span>${escapeHTML(sourceName(card))}</span><span>${escapeHTML(titleCase(cardRole(card)))}</span></p>
       <p class="card-statline"><span>HP <b data-card-hp>${formatNumber(stats.hp)}</b></span><span>ATK <b data-card-atk>${formatNumber(stats.atk)}</b></span></p>
     </button>
   `;
@@ -291,6 +323,7 @@ function renderPills(container, values, active, dataName) {
 function renderFilters() {
   const sources = ["all", ...new Set(state.cards.map(sourceName))];
   renderPills(els.sourceFilters, sources, state.source, "source");
+  renderPills(els.roleFilters, ["all", "regular", "aoe", "support"], state.role, "role");
 }
 
 function renderBorderControls() {
@@ -363,7 +396,8 @@ function renderModal() {
   els.modalTags.innerHTML = [
     titleCase(card.ability || card.abilityType || "No ability"),
     card.source || sourceName(card),
-    selectedNames.length ? selectedNames.join(" + ") : "Base"
+    selectedNames.length ? selectedNames.join(" + ") : "Base",
+    titleCase(cardRole(card))
   ].map((tag) => `<span class="modal-tag">${escapeHTML(tag)}</span>`).join("");
 
   els.modalImage.hidden = false;
@@ -1146,6 +1180,14 @@ function bindEvents() {
     const button = event.target.closest("[data-source]");
     if (!button) return;
     state.source = button.dataset.source;
+    renderFilters();
+    renderGrid();
+  });
+
+  els.roleFilters.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-role]");
+    if (!button) return;
+    state.role = button.dataset.role;
     renderFilters();
     renderGrid();
   });
