@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=10" />
+  <link rel="stylesheet" href="styles.css?v=11" />
 </head>
 <body>
   <div class="app-shell">
@@ -23,9 +23,9 @@
 
       <button class="sidebar-action" id="importButton" type="button">
         <span>↥</span>
-        Import Collection
+        Import Inventory
       </button>
-      <input id="importInput" type="file" accept="application/json" hidden />
+      <input id="importInput" type="file" accept="application/json,image/png,image/jpeg,image/webp" hidden />
 
       <section class="sidebar-section collection-summary">
         <div class="section-label">
@@ -152,8 +152,29 @@
     </article>
   </div>
 
+  <div class="modal-backdrop" id="scanModal" hidden>
+    <article class="scan-modal" role="dialog" aria-modal="true" aria-labelledby="scanTitle">
+      <button class="modal-close" id="scanClose" type="button" aria-label="Close inventory scan">×</button>
+      <header class="scan-header">
+        <p class="eyebrow">Screenshot Import</p>
+        <h2 id="scanTitle">Review detected cards</h2>
+        <p id="scanSummary">Check each match and quantity before importing it.</p>
+      </header>
+      <div class="scan-progress" id="scanProgress" hidden>
+        <span class="spinner"></span>
+        <span id="scanProgressText">Reading inventory screenshot…</span>
+      </div>
+      <div class="scan-results" id="scanResults"></div>
+      <footer class="scan-actions">
+        <button class="secondary-button" id="scanCancel" type="button">Cancel</button>
+        <button class="secondary-button" id="scanAdd" type="button">Add to collection</button>
+        <button class="primary-button" id="scanReplace" type="button">Replace collection</button>
+      </footer>
+    </article>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script src="script.js?v=10"></script>
+  <script src="script.js?v=11"></script>
 </body>
 </html>
