@@ -611,48 +611,57 @@ function screenshotBorderMultiplier(borderNames) {
   }, 1);
 }
 
-function matchCardUsingOdds(signature, references, recognition, borderNames) {
+function allBorderCombinations() {
+  return getBorderDefs().reduce((combinations, border) => {
+    const additions = combinations.map((combination) => ({
+      names: [...combination.names, border.name],
+      multiplier: combination.multiplier * Number(border.chance || 1)
+    }));
+    return [...combinations, ...additions];
+  }, [{ names: [], multiplier: 1 }]);
+}
+
+function matchCardUsingOdds(signature, references, recognition) {
   if (!recognition.odds) {
     const visual = bestCardMatches(signature, references);
-    return { ...visual, relativeError: Infinity, method: "Artwork fallback" };
+    return { ...visual, relativeError: Infinity, method: "Artwork fallback", combination: [] };
   }
-  const multiplier = screenshotBorderMultiplier(borderNames);
-  const targets = [{ odds: recognition.odds / multiplier, adjusted: multiplier > 1 }];
-  if (multiplier > 1) targets.push({ odds: recognition.odds, adjusted: false });
 
   const ranked = [];
-  for (const target of targets) {
-    for (const card of state.cards) {
-      const relativeError = Math.abs(Math.log(Math.max(1, Number(card.odds)) / Math.max(1, target.odds)));
-      ranked.push({ card, relativeError, adjusted: target.adjusted, targetOdds: target.odds });
+  const combinations = allBorderCombinations();
+  for (const card of state.cards) {
+    for (const combination of combinations) {
+      const adjustedOdds = Number(card.odds || 1) * combination.multiplier;
+      const relativeError = Math.abs(Math.log(Math.max(1, adjustedOdds) / Math.max(1, recognition.odds)));
+      ranked.push({ card, combination, relativeError });
     }
   }
   ranked.sort((left, right) => left.relativeError - right.relativeError);
   const closest = ranked[0];
-  const candidates = ranked.filter((candidate) => {
-    return candidate.adjusted === closest.adjusted && candidate.relativeError <= closest.relativeError + 0.035;
-  });
-  let selected = closest;
-  if (candidates.length > 1) {
-    const referenceMap = new Map(references.map((reference) => [reference.card.id, reference]));
-    selected = candidates
-      .map((candidate) => ({
-        ...candidate,
-        artDistance: referenceMap.has(candidate.card.id)
-          ? signatureDistance(signature, referenceMap.get(candidate.card.id).signature)
-          : Infinity
-      }))
-      .sort((left, right) => left.artDistance - right.artDistance)[0];
-  }
-  const errorPenalty = Math.min(70, selected.relativeError * 400);
-  const ocrPenalty = Math.max(0, 70 - recognition.confidence) * 0.15;
+  const candidates = ranked.filter((candidate) => candidate.relativeError <= closest.relativeError + 0.035);
+
+  const referenceMap = new Map(references.map((reference) => [reference.card.id, reference]));
+  const withArtwork = candidates.map((candidate) => ({
+    ...candidate,
+    artDistance: referenceMap.has(candidate.card.id)
+      ? signatureDistance(signature, referenceMap.get(candidate.card.id).signature)
+      : Infinity
+  }));
+  const selected = withArtwork.sort((left, right) => left.artDistance - right.artDistance)[0] || closest;
+  const secondArt = withArtwork.filter((candidate) => candidate.card.id !== selected.card.id)
+    .sort((left, right) => left.artDistance - right.artDistance)[0];
+  const artSeparation = secondArt && Number.isFinite(secondArt.artDistance)
+    ? Math.max(0, (secondArt.artDistance - selected.artDistance) / Math.max(secondArt.artDistance, 0.0001))
+    : 0.5;
+  const errorPenalty = Math.min(55, selected.relativeError * 350);
+  const confidence = Math.round(Math.max(15, Math.min(99, 82 - errorPenalty + artSeparation * 35)));
+
   return {
     card: selected.card,
-    confidence: Math.round(Math.max(10, Math.min(99, 98 - errorPenalty - ocrPenalty))),
+    confidence,
     relativeError: selected.relativeError,
-    method: selected.adjusted && borderNames.length
-      ? `Odds ÷ ${borderNames.join(" × ")}`
-      : "Odds"
+    combination: selected.combination.names,
+    method: `Odds + ${selected.combination.names.length ? selected.combination.names.join(" + ") : "Base"}`
   };
 }
 
@@ -770,7 +779,10 @@ async function getReferenceSignatures() {
           const image = await loadImageSource(imageURL(card));
           return {
             card,
-            signature: imageSignature(image, image.width * 0.03, image.height * 0.02, image.width * 0.94, image.height * 0.7)
+            signature: [
+              ...imageSignature(image, image.width * 0.06, image.height * 0.13, image.width * 0.88, image.height * 0.28),
+              ...imageSignature(image, image.width * 0.03, image.height * 0.02, image.width * 0.94, image.height * 0.7)
+            ]
           };
         } catch {
           return null;
@@ -924,19 +936,28 @@ async function scanInventoryImage(file) {
     for (let index = 0; index < cells.length; index += 1) {
       const cell = cells[index];
       els.scanProgressText.textContent = `Reading odds ${index + 1}/${cells.length}…`;
-      const signature = imageSignature(
-        image,
-        cell.x + cell.width * 0.05,
-        cell.y + cell.height * 0.03,
-        cell.width * 0.9,
-        cell.height * 0.72
-      );
+      const signature = [
+        ...imageSignature(
+          image,
+          cell.x + cell.width * 0.06,
+          cell.y + cell.height * 0.13,
+          cell.width * 0.88,
+          cell.height * 0.28
+        ),
+        ...imageSignature(
+          image,
+          cell.x + cell.width * 0.05,
+          cell.y + cell.height * 0.03,
+          cell.width * 0.9,
+          cell.height * 0.72
+        )
+      ];
       const detectedBorders = detectScreenshotBorders(image, cell);
       let recognition = await recognizeDisplayedOdds(worker, image, cell, false);
-      let match = matchCardUsingOdds(signature, references, recognition, detectedBorders);
+      let match = matchCardUsingOdds(signature, references, recognition);
       if (!recognition.odds || match.relativeError > 0.065) {
         const binaryRecognition = await recognizeDisplayedOdds(worker, image, cell, true);
-        const binaryMatch = matchCardUsingOdds(signature, references, binaryRecognition, detectedBorders);
+        const binaryMatch = matchCardUsingOdds(signature, references, binaryRecognition);
         if (binaryMatch.relativeError < match.relativeError) {
           recognition = binaryRecognition;
           match = binaryMatch;
@@ -949,7 +970,8 @@ async function scanInventoryImage(file) {
         preview: cropPreview(image, cell),
         method: match.method,
         displayedOdds: recognition.odds,
-        detectedBorders
+        detectedBorders,
+        matchedCombination: match.combination
       });
       await new Promise((resolve) => requestAnimationFrame(resolve));
     }
