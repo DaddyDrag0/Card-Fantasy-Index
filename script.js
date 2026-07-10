@@ -9,7 +9,6 @@ const state = {
   cards: [],
   meta: { variants: [] },
   query: "",
-  tier: "all",
   source: "all",
   sort: "odds-asc",
   border: "Base",
@@ -29,7 +28,6 @@ const els = {
   sortSelect: document.querySelector("#sortSelect"),
   borderSelect: document.querySelector("#borderSelect"),
   ownedOnly: document.querySelector("#ownedOnly"),
-  tierFilters: document.querySelector("#tierFilters"),
   sourceFilters: document.querySelector("#sourceFilters"),
   ownedSummary: document.querySelector("#ownedSummary"),
   ownedProgress: document.querySelector("#ownedProgress"),
@@ -166,14 +164,12 @@ function getVisibleCards() {
       card.ability,
       card.abilityType,
       card.abilityDescription,
-      card.tier,
       card.source,
       card.weather
     ].join(" ")).includes(query);
-    const matchesTier = state.tier === "all" || card.tier === state.tier;
     const matchesSource = state.source === "all" || sourceName(card) === state.source;
     const matchesOwned = !state.ownedOnly || ownedCount(card.id) > 0;
-    return matchesQuery && matchesTier && matchesSource && matchesOwned;
+    return matchesQuery && matchesSource && matchesOwned;
   });
 
   return [...filtered].sort((a, b) => {
@@ -197,7 +193,7 @@ function cardHTML(card) {
       </span>
       ${owned > 0 ? `<span class="card-owned-badge" data-owned-badge>${owned}</span>` : `<span class="card-owned-badge" data-owned-badge hidden>0</span>`}
       <h3>${escapeHTML(card.name)}</h3>
-      <p class="card-subline"><span>${escapeHTML(card.tier || "Card")}</span><span>${escapeHTML(sourceName(card))}</span></p>
+      <p class="card-subline is-single"><span>${escapeHTML(sourceName(card))}</span></p>
       <p class="card-statline"><span>HP <b data-card-hp>${formatNumber(stats.hp)}</b></span><span>ATK <b data-card-atk>${formatNumber(stats.atk)}</b></span></p>
     </button>
   `;
@@ -227,9 +223,7 @@ function renderPills(container, values, active, dataName) {
 }
 
 function renderFilters() {
-  const tiers = ["all", ...new Set(state.cards.map((card) => card.tier).filter(Boolean))];
   const sources = ["all", ...new Set(state.cards.map(sourceName))];
-  renderPills(els.tierFilters, tiers, state.tier, "tier");
   renderPills(els.sourceFilters, sources, state.source, "source");
 }
 
@@ -292,7 +286,7 @@ function renderModal() {
   const inTeam = state.team.includes(card.id);
   const border = getBorderDefinition();
 
-  els.modalTier.textContent = `${card.tier || "Card"} · ${sourceName(card)}`;
+  els.modalTier.textContent = sourceName(card);
   els.modalName.textContent = card.name;
   els.modalAbility.textContent = card.abilityDescription || "No ability description available.";
   els.modalHP.textContent = formatNumber(stats.hp);
@@ -475,14 +469,6 @@ function bindEvents() {
 
   els.ownedOnly.addEventListener("change", (event) => {
     state.ownedOnly = event.target.checked;
-    renderGrid();
-  });
-
-  els.tierFilters.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-tier]");
-    if (!button) return;
-    state.tier = button.dataset.tier;
-    renderFilters();
     renderGrid();
   });
 
