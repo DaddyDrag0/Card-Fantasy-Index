@@ -622,46 +622,62 @@ function allBorderCombinations() {
 }
 
 function matchCardUsingOdds(signature, references, recognition) {
-  if (!recognition.odds) {
-    const visual = bestCardMatches(signature, references);
-    return { ...visual, relativeError: Infinity, method: "Artwork fallback", combination: [] };
+  const visualRanking = references
+    .map((reference) => ({
+      card: reference.card,
+      artDistance: signatureDistance(signature, reference.signature)
+    }))
+    .sort((left, right) => left.artDistance - right.artDistance);
+
+  const bestVisual = visualRanking[0];
+  const secondVisual = visualRanking[1] || { artDistance: bestVisual.artDistance * 1.5 };
+  const closeVisuals = visualRanking
+    .filter((candidate) => candidate.artDistance <= bestVisual.artDistance * 1.08 + 0.0004)
+    .slice(0, 8);
+
+  let selected = bestVisual;
+  let method = "Artwork";
+  let selectedOddsError = Infinity;
+
+  if (recognition.odds && closeVisuals.length > 1) {
+    const combinations = allBorderCombinations();
+    const tied = closeVisuals.map((candidate) => {
+      const closestOdds = combinations
+        .map((combination) => ({
+          combination,
+          error: Math.abs(Math.log(
+            Math.max(1, Number(candidate.card.odds || 1) * combination.multiplier)
+            / Math.max(1, recognition.odds)
+          ))
+        }))
+        .sort((left, right) => left.error - right.error)[0];
+      return { ...candidate, oddsError: closestOdds.error };
+    }).sort((left, right) => left.oddsError - right.oddsError);
+    selected = tied[0];
+    selectedOddsError = selected.oddsError;
+    method = "Artwork + odds tie-break";
+  } else if (recognition.odds) {
+    selectedOddsError = allBorderCombinations()
+      .map((combination) => Math.abs(Math.log(
+        Math.max(1, Number(selected.card.odds || 1) * combination.multiplier)
+        / Math.max(1, recognition.odds)
+      )))
+      .sort((left, right) => left - right)[0];
   }
 
-  const ranked = [];
-  const combinations = allBorderCombinations();
-  for (const card of state.cards) {
-    for (const combination of combinations) {
-      const adjustedOdds = Number(card.odds || 1) * combination.multiplier;
-      const relativeError = Math.abs(Math.log(Math.max(1, adjustedOdds) / Math.max(1, recognition.odds)));
-      ranked.push({ card, combination, relativeError });
-    }
-  }
-  ranked.sort((left, right) => left.relativeError - right.relativeError);
-  const closest = ranked[0];
-  const candidates = ranked.filter((candidate) => candidate.relativeError <= closest.relativeError + 0.035);
-
-  const referenceMap = new Map(references.map((reference) => [reference.card.id, reference]));
-  const withArtwork = candidates.map((candidate) => ({
-    ...candidate,
-    artDistance: referenceMap.has(candidate.card.id)
-      ? signatureDistance(signature, referenceMap.get(candidate.card.id).signature)
-      : Infinity
-  }));
-  const selected = withArtwork.sort((left, right) => left.artDistance - right.artDistance)[0] || closest;
-  const secondArt = withArtwork.filter((candidate) => candidate.card.id !== selected.card.id)
-    .sort((left, right) => left.artDistance - right.artDistance)[0];
-  const artSeparation = secondArt && Number.isFinite(secondArt.artDistance)
-    ? Math.max(0, (secondArt.artDistance - selected.artDistance) / Math.max(secondArt.artDistance, 0.0001))
-    : 0.5;
-  const errorPenalty = Math.min(55, selected.relativeError * 350);
-  const confidence = Math.round(Math.max(15, Math.min(99, 82 - errorPenalty + artSeparation * 35)));
+  const visualSeparation = Math.max(
+    0,
+    (secondVisual.artDistance - bestVisual.artDistance) / Math.max(secondVisual.artDistance, 0.0001)
+  );
+  const confidence = Math.round(Math.max(15, Math.min(95, 20 + visualSeparation * 180)));
 
   return {
     card: selected.card,
     confidence,
-    relativeError: selected.relativeError,
-    combination: selected.combination.names,
-    method: `Odds + ${selected.combination.names.length ? selected.combination.names.join(" + ") : "Base"}`
+    relativeError: selectedOddsError,
+    combination: [],
+    alternatives: visualRanking.slice(1, 4).map((candidate) => candidate.card.name),
+    method
   };
 }
 
@@ -733,8 +749,8 @@ function detectInventoryCells(image) {
 }
 
 function imageSignature(image, sx, sy, sw, sh) {
-  const width = 18;
-  const height = 14;
+  const width = 30;
+  const height = 22;
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -780,8 +796,9 @@ async function getReferenceSignatures() {
           return {
             card,
             signature: [
-              ...imageSignature(image, image.width * 0.06, image.height * 0.13, image.width * 0.88, image.height * 0.28),
-              ...imageSignature(image, image.width * 0.03, image.height * 0.02, image.width * 0.94, image.height * 0.7)
+              ...imageSignature(image, image.width * 0.07, image.height * 0.14, image.width * 0.86, image.height * 0.26),
+              ...imageSignature(image, image.width * 0.07, image.height * 0.14, image.width * 0.86, image.height * 0.26),
+              ...imageSignature(image, image.width * 0.05, image.height * 0.08, image.width * 0.9, image.height * 0.46)
             ]
           };
         } catch {
@@ -939,17 +956,24 @@ async function scanInventoryImage(file) {
       const signature = [
         ...imageSignature(
           image,
-          cell.x + cell.width * 0.06,
-          cell.y + cell.height * 0.13,
-          cell.width * 0.88,
-          cell.height * 0.28
+          cell.x + cell.width * 0.07,
+          cell.y + cell.height * 0.14,
+          cell.width * 0.86,
+          cell.height * 0.26
+        ),
+        ...imageSignature(
+          image,
+          cell.x + cell.width * 0.07,
+          cell.y + cell.height * 0.14,
+          cell.width * 0.86,
+          cell.height * 0.26
         ),
         ...imageSignature(
           image,
           cell.x + cell.width * 0.05,
-          cell.y + cell.height * 0.03,
+          cell.y + cell.height * 0.08,
           cell.width * 0.9,
-          cell.height * 0.72
+          cell.height * 0.46
         )
       ];
       const detectedBorders = detectScreenshotBorders(image, cell);
@@ -971,7 +995,8 @@ async function scanInventoryImage(file) {
         method: match.method,
         displayedOdds: recognition.odds,
         detectedBorders,
-        matchedCombination: match.combination
+        matchedCombination: match.combination,
+        alternatives: match.alternatives
       });
       await new Promise((resolve) => requestAnimationFrame(resolve));
     }
