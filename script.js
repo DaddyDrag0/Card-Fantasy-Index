@@ -203,6 +203,15 @@ function cardHTML(card) {
   `;
 }
 
+let pendingGridFrame = 0;
+function scheduleGridRender() {
+  cancelAnimationFrame(pendingGridFrame);
+  pendingGridFrame = requestAnimationFrame(() => {
+    pendingGridFrame = 0;
+    renderGrid();
+  });
+}
+
 function renderGrid() {
   const cards = getVisibleCards();
   els.resultCount.textContent = formatNumber(cards.length);
@@ -443,7 +452,7 @@ async function importCollection(file) {
 function bindEvents() {
   els.searchInput.addEventListener("input", (event) => {
     state.query = event.target.value;
-    renderGrid();
+    scheduleGridRender();
   });
 
   els.sizeRange.addEventListener("input", (event) => {
