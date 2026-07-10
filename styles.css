@@ -230,3 +230,39 @@ button{color:inherit}.app-shell{display:grid;grid-template-columns:var(--sidebar
   box-shadow:0 0 12px color-mix(in srgb,var(--border-glow) 52%,transparent);
   background:linear-gradient(#17121a,#17121a) padding-box,var(--border-gradient) border-box;
 }
+
+/* Independent Shiny / Diamond / Radiant toggles */
+.border-toggle-control{display:grid;gap:7px;color:#77717d;font-size:13px;text-transform:uppercase;letter-spacing:.06em}
+.modifier-controls,.modal-border-controls{display:flex;flex-wrap:wrap;gap:8px}
+.modifier-button{
+  min-height:52px;padding:7px 13px;border:1px solid color-mix(in srgb,var(--chip-color),transparent 55%);
+  border-radius:9px;color:#b7b1bb;background:#0c0c0e;transition:background .16s ease,box-shadow .16s ease,border-color .16s ease,transform .16s ease
+}
+.modifier-button span{display:block;font-size:12px;font-weight:700}.modifier-button small{display:block;margin-top:3px;color:#716b75;font-size:8px}
+.modifier-button:hover{transform:translateY(-1px);border-color:var(--chip-color)}
+.modifier-button.is-active{
+  color:#fff;border-color:var(--chip-color);
+  background:color-mix(in srgb,var(--chip-color),transparent 68%);
+  box-shadow:0 0 18px color-mix(in srgb,var(--chip-color),transparent 70%)
+}
+.modifier-button.is-active small{color:#fff}
+@property --angle{syntax:"<angle>";initial-value:0deg;inherits:false}
+@keyframes spinBorder{to{--angle:360deg}}
+.card-tile.has-modifiers::before,
+.team-slot.has-modifiers::before,
+.card-modal.has-modifiers::before,
+.modal-image-wrap.has-modifiers::before{
+  content:"";position:absolute;inset:0;z-index:8;padding:3px;border-radius:inherit;pointer-events:none;
+  background:conic-gradient(from var(--angle),var(--modifier-colors));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;
+  mask-composite:exclude;
+  animation:spinBorder 4.8s linear infinite
+}
+.card-tile.has-modifiers{border-color:transparent;box-shadow:0 0 15px color-mix(in srgb,var(--border-glow) 34%,transparent)}
+.team-slot.has-modifiers,.card-modal.has-modifiers,.modal-image-wrap.has-modifiers{position:relative}
+.team-slot.has-modifiers{border-color:transparent;box-shadow:0 0 12px color-mix(in srgb,var(--border-glow) 28%,transparent)}
+.card-modal.has-modifiers{border-color:transparent;box-shadow:0 30px 100px rgba(0,0,0,.75),0 0 25px color-mix(in srgb,var(--border-glow) 35%,transparent)}
+.modal-image-wrap.has-modifiers{border-radius:4px}
+@media(max-width:1450px){.border-toggle-control{grid-column:1/-1}.modifier-controls{flex-wrap:nowrap}.modifier-button{flex:1}}
+@media(prefers-reduced-motion:reduce){.card-tile.has-modifiers::before,.team-slot.has-modifiers::before,.card-modal.has-modifiers::before,.modal-image-wrap.has-modifiers::before{animation:none}}
