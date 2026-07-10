@@ -41,6 +41,7 @@ const els = {
   exportButton: document.querySelector("#exportButton"),
   clearCollectionButton: document.querySelector("#clearCollectionButton"),
   cardModal: document.querySelector("#cardModal"),
+  modalDialog: document.querySelector(".card-modal"),
   modalClose: document.querySelector("#modalClose"),
   modalImage: document.querySelector("#modalImage"),
   modalImageFallback: document.querySelector("#modalImageFallback"),
@@ -110,9 +111,60 @@ function accentForCard(card) {
   return "#8d4dff";
 }
 
+function getBorderOptions() {
+  const combos = state.meta.variantCombos || [];
+  if (combos.length) return combos;
+  return [
+    { name: "Base", variants: [] },
+    ...(state.meta.variants || []).map((variant) => ({ name: variant.name, variants: [variant.name] }))
+  ];
+}
+
 function getBorderDefinition(name = state.border) {
-  if (name === "Base") return null;
-  return (state.meta.variants || []).find((variant) => variant.name === name) || null;
+  const combo = getBorderOptions().find((option) => option.name === name);
+  const variantNames = combo?.variants || (name === "Base" ? [] : [name]);
+  const definitions = variantNames
+    .map((variantName) => (state.meta.variants || []).find((variant) => variant.name === variantName))
+    .filter(Boolean);
+  if (!definitions.length) return null;
+  return {
+    name,
+    variants: variantNames,
+    definitions,
+    chance: definitions.reduce((total, definition) => total * Number(definition.chance || 1), 1),
+    colors: definitions.map((definition) => definition.color || "#8d4dff"),
+    color: definitions[0].color || "#8d4dff"
+  };
+}
+
+function borderVisualStyle(name = state.border) {
+  const border = getBorderDefinition(name);
+  if (!border) return "";
+  const colors = border.colors;
+  const gradient = colors.length === 1
+    ? `linear-gradient(135deg, ${colors[0]}, ${colors[0]})`
+    : `linear-gradient(135deg, ${colors.map((color, index) => `${color} ${Math.round((index / (colors.length - 1)) * 100)}%`).join(", ")})`;
+  return `--border-primary:${colors[0]};--border-glow:${colors[colors.length - 1]};--border-gradient:${gradient};`;
+}
+
+function applyBorderHighlight(element, name = state.border) {
+  if (!element) return;
+  const active = name !== "Base" && Boolean(getBorderDefinition(name));
+  element.classList.toggle("has-border", active);
+  if (active) {
+    const border = getBorderDefinition(name);
+    const colors = border.colors;
+    const gradient = colors.length === 1
+      ? `linear-gradient(135deg, ${colors[0]}, ${colors[0]})`
+      : `linear-gradient(135deg, ${colors.map((color, index) => `${color} ${Math.round((index / (colors.length - 1)) * 100)}%`).join(", ")})`;
+    element.style.setProperty("--border-primary", colors[0]);
+    element.style.setProperty("--border-glow", colors[colors.length - 1]);
+    element.style.setProperty("--border-gradient", gradient);
+  } else {
+    element.style.removeProperty("--border-primary");
+    element.style.removeProperty("--border-glow");
+    element.style.removeProperty("--border-gradient");
+  }
 }
 
 function statsForCard(card, borderName = state.border) {
@@ -187,7 +239,7 @@ function cardHTML(card) {
   const owned = ownedCount(card.id);
   const accent = accentForCard(card);
   return `
-    <button class="card-tile" type="button" data-card-id="${escapeHTML(card.id)}" style="--accent:${accent}">
+    <button class="card-tile ${state.border !== "Base" ? "has-border" : ""}" type="button" data-card-id="${escapeHTML(card.id)}" style="--accent:${accent};${borderVisualStyle()}">
       <span class="card-image-frame">
         <span class="card-fallback">${escapeHTML(card.name)}</span>
         <img src="${imageURL(card)}" alt="${escapeHTML(card.name)}" loading="lazy" decoding="async" onload="this.previousElementSibling.hidden=true" onerror="this.hidden=true">
@@ -229,7 +281,7 @@ function renderFilters() {
 }
 
 function renderBorderOptions() {
-  const names = ["Base", ...(state.meta.variants || []).map((variant) => variant.name)];
+  const names = getBorderOptions().map((option) => option.name);
   if (!names.includes(state.border)) state.border = "Base";
   els.borderSelect.innerHTML = names.map((name) => `<option value="${escapeHTML(name)}" ${name === state.border ? "selected" : ""}>${escapeHTML(name)}</option>`).join("");
 }
@@ -261,7 +313,7 @@ function renderTeam() {
     totalHP += stats.hp;
     totalATK += stats.atk;
     slots.push(`
-      <div class="team-slot" data-team-id="${escapeHTML(card.id)}">
+      <div class="team-slot ${state.border !== "Base" ? "has-border" : ""}" data-team-id="${escapeHTML(card.id)}" style="${borderVisualStyle()}">
         <img src="${imageURL(card)}" alt="" onerror="this.style.visibility='hidden'">
         <span><strong>${escapeHTML(card.name)}</strong><small>${formatNumber(stats.hp)} HP · ${formatNumber(stats.atk)} ATK</small></span>
         <button class="team-remove" type="button" data-team-remove="${escapeHTML(card.id)}" aria-label="Remove ${escapeHTML(card.name)}">×</button>
@@ -309,11 +361,11 @@ function renderModal() {
     els.modalImageFallback.hidden = false;
   };
 
-  const borderNames = ["Base", ...(state.meta.variants || []).map((variant) => variant.name)];
+  const borderNames = getBorderOptions().map((option) => option.name);
   els.modalBorderControls.innerHTML = borderNames.map((name) => {
     const definition = getBorderDefinition(name);
     const color = definition?.color || "#8d4dff";
-    return `<button class="border-button ${state.border === name ? "is-active" : ""}" type="button" data-modal-border="${escapeHTML(name)}" style="--border-color:${color}">${escapeHTML(name)}</button>`;
+    return `<button class="border-button ${definition ? "has-combo" : ""} ${state.border === name ? "is-active" : ""}" type="button" data-modal-border="${escapeHTML(name)}" style="--border-color:${color};${borderVisualStyle(name)}">${escapeHTML(name)}</button>`;
   }).join("");
 
   els.removeCopyButton.disabled = owned <= 0;
@@ -321,9 +373,8 @@ function renderModal() {
   els.teamButton.classList.toggle("is-active", inTeam);
   els.teamButton.disabled = !inTeam && (owned <= 0 || state.team.length >= MAX_TEAM_SIZE);
 
-  if (border) {
-    document.documentElement.style.setProperty("--active-border", border.color || "#8d4dff");
-  }
+  applyBorderHighlight(els.modalDialog);
+  if (border) document.documentElement.style.setProperty("--active-border", border.color || "#8d4dff");
 }
 
 function openModal(id) {
@@ -356,6 +407,7 @@ function updateVisibleStats() {
     const atk = tile.querySelector("[data-card-atk]");
     if (hp) hp.textContent = formatNumber(stats.hp);
     if (atk) atk.textContent = formatNumber(stats.atk);
+    applyBorderHighlight(tile);
   });
 }
 
