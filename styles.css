@@ -196,3 +196,37 @@ button{color:inherit}.app-shell{display:grid;grid-template-columns:var(--sidebar
 /* Hidden states must not reserve layout space after loading */
 .loading-state[hidden],
 .empty-state[hidden]{display:none!important}
+
+/* Shiny, Diamond, Radiant, and combined border highlighting */
+.card-tile.has-border{
+  border:2px solid transparent;
+  background:linear-gradient(#09090a,#09090a) padding-box,var(--border-gradient) border-box;
+  box-shadow:0 0 14px color-mix(in srgb,var(--border-glow) 42%,transparent),inset 0 0 12px color-mix(in srgb,var(--border-primary) 13%,transparent);
+}
+.card-tile.has-border:hover{
+  border-color:transparent;
+  box-shadow:0 10px 28px rgba(0,0,0,.58),0 0 22px color-mix(in srgb,var(--border-glow) 62%,transparent),inset 0 0 14px color-mix(in srgb,var(--border-primary) 18%,transparent);
+}
+.card-tile.has-border .card-image-frame::before{
+  content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
+  box-shadow:inset 0 0 0 2px var(--border-primary),inset 0 0 18px color-mix(in srgb,var(--border-glow) 28%,transparent);
+}
+.team-slot.has-border{
+  border:2px solid transparent;
+  background:linear-gradient(#0c0c0e,#0c0c0e) padding-box,var(--border-gradient) border-box;
+  box-shadow:0 0 12px color-mix(in srgb,var(--border-glow) 34%,transparent);
+}
+.card-modal.has-border{
+  border:2px solid transparent;
+  background:linear-gradient(#0c0c0f,#0c0c0f) padding-box,var(--border-gradient) border-box;
+  box-shadow:0 30px 100px rgba(0,0,0,.75),0 0 28px color-mix(in srgb,var(--border-glow) 45%,transparent);
+}
+.border-button.has-combo{
+  border:2px solid transparent;
+  background:linear-gradient(#09090b,#09090b) padding-box,var(--border-gradient) border-box;
+}
+.border-button.has-combo.is-active{
+  color:#fff;
+  box-shadow:0 0 12px color-mix(in srgb,var(--border-glow) 52%,transparent);
+  background:linear-gradient(#17121a,#17121a) padding-box,var(--border-gradient) border-box;
+}
