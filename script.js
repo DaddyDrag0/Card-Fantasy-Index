@@ -1,4 +1,4 @@
-const LIBRARY_ROOT = "https://raw.githubusercontent.com/DaddyDrag0/Card-Fantasy-Library/main/";
+const LIBRARY_ROOT = "./";
 const DATA_URL = `${LIBRARY_ROOT}data/cards.json`;
 const IMAGE_ROOT = `${LIBRARY_ROOT}assets/cards/`;
 const STORAGE_KEY = "cf-deck-builder-state-v1";
