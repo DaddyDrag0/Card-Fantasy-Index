@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Card Fantasy Index</title>
+  <meta name="description" content="Card Fantasy collection tracker and team builder." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=1" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#top" aria-label="Card Fantasy Index home">
+        <span class="brand-mark">CF</span>
+        <span>
+          <strong>Card Fantasy</strong>
+          <small>Collection Index</small>
+        </span>
+      </a>
+
+      <button class="sidebar-action" id="importButton" type="button">
+        <span>↥</span>
+        Import Collection
+      </button>
+      <input id="importInput" type="file" accept="application/json" hidden />
+
+      <section class="sidebar-section collection-summary">
+        <div class="section-label">
+          <span>Collection</span>
+          <strong id="ownedSummary">0 / 0</strong>
+        </div>
+        <div class="summary-bar"><span id="ownedProgress"></span></div>
+        <div class="sidebar-button-row">
+          <button class="tiny-button" id="exportButton" type="button">Export</button>
+          <button class="tiny-button danger" id="clearCollectionButton" type="button">Clear</button>
+        </div>
+      </section>
+
+      <section class="sidebar-section team-section">
+        <div class="section-label">
+          <span>Your Team</span>
+          <small id="teamCount">0/5</small>
+        </div>
+        <div class="team-list" id="teamList"></div>
+      </section>
+
+      <section class="sidebar-section totals-section">
+        <div><span>Total HP</span><strong id="teamHP">0</strong></div>
+        <div><span>Total ATK</span><strong id="teamATK">0</strong></div>
+      </section>
+    </aside>
+
+    <main class="workspace" id="top">
+      <header class="topbar">
+        <label class="search-box" for="searchInput">
+          <span>⌕</span>
+          <input id="searchInput" type="search" placeholder="Search by name, ability, source..." autocomplete="off" />
+        </label>
+
+        <div class="control-row">
+          <label class="range-control" for="sizeRange">
+            <span>Card size</span>
+            <input id="sizeRange" type="range" min="150" max="260" value="190" />
+          </label>
+
+          <label class="select-control" for="sortSelect">
+            <span>Sort by</span>
+            <select id="sortSelect">
+              <option value="odds-asc">Odds: common first</option>
+              <option value="odds-desc">Odds: rare first</option>
+              <option value="name-asc">Name: A–Z</option>
+              <option value="hp-desc">HP: highest</option>
+              <option value="atk-desc">ATK: highest</option>
+            </select>
+          </label>
+
+          <label class="select-control" for="borderSelect">
+            <span>Border</span>
+            <select id="borderSelect">
+              <option value="Base">Base</option>
+            </select>
+          </label>
+
+          <label class="owned-toggle">
+            <input id="ownedOnly" type="checkbox" />
+            <span>Show owned only</span>
+          </label>
+        </div>
+
+        <div class="filter-groups">
+          <div class="filter-block">
+            <span class="filter-title">Tier</span>
+            <div class="filter-pills" id="tierFilters"></div>
+          </div>
+          <div class="filter-block">
+            <span class="filter-title">Source</span>
+            <div class="filter-pills" id="sourceFilters"></div>
+          </div>
+        </div>
+      </header>
+
+      <section class="library-panel">
+        <div class="library-heading">
+          <div>
+            <p class="eyebrow">Card Library</p>
+            <h1>Collection Index</h1>
+          </div>
+          <div class="library-count">
+            <strong id="resultCount">0</strong>
+            <span>cards shown</span>
+          </div>
+        </div>
+
+        <div class="loading-state" id="loadingState">
+          <span class="spinner"></span>
+          Loading cards from Card-Fantasy-Library…
+        </div>
+        <div class="card-grid" id="cardGrid" aria-live="polite"></div>
+        <div class="empty-state" id="emptyState" hidden>No cards match the current filters.</div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="cardModal" hidden>
+    <article class="card-modal" role="dialog" aria-modal="true" aria-labelledby="modalName">
+      <button class="modal-close" id="modalClose" type="button" aria-label="Close card details">×</button>
+      <div class="modal-image-wrap">
+        <img id="modalImage" alt="" />
+        <span class="modal-image-fallback" id="modalImageFallback">No image available</span>
+      </div>
+      <div class="modal-content">
+        <p class="eyebrow" id="modalTier">Card</p>
+        <h2 id="modalName">Card name</h2>
+        <p class="modal-ability" id="modalAbility">Ability description</p>
+
+        <div class="modal-tags" id="modalTags"></div>
+
+        <dl class="modal-stats">
+          <div><dt>HP</dt><dd id="modalHP">0</dd></div>
+          <div><dt>ATK</dt><dd id="modalATK">0</dd></div>
+          <div><dt>Odds</dt><dd id="modalOdds">1/1</dd></div>
+          <div><dt>Owned</dt><dd id="modalOwned">0</dd></div>
+        </dl>
+
+        <div class="modal-border-controls" id="modalBorderControls"></div>
+
+        <div class="modal-actions">
+          <div class="quantity-actions">
+            <button class="secondary-button" id="removeCopyButton" type="button">− Copy</button>
+            <button class="primary-button" id="addCopyButton" type="button">+ Copy</button>
+          </div>
+          <button class="team-button" id="teamButton" type="button">Add to team</button>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="script.js?v=1"></script>
+</body>
+</html>
