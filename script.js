@@ -16,7 +16,8 @@ const state = {
   ownedOnly: false,
   selectedId: null,
   collection: {},
-  team: []
+  team: [],
+  scanResults: []
 };
 
 const els = {
@@ -58,6 +59,15 @@ const els = {
   removeCopyButton: document.querySelector("#removeCopyButton"),
   addCopyButton: document.querySelector("#addCopyButton"),
   teamButton: document.querySelector("#teamButton"),
+  scanModal: document.querySelector("#scanModal"),
+  scanClose: document.querySelector("#scanClose"),
+  scanCancel: document.querySelector("#scanCancel"),
+  scanAdd: document.querySelector("#scanAdd"),
+  scanReplace: document.querySelector("#scanReplace"),
+  scanSummary: document.querySelector("#scanSummary"),
+  scanProgress: document.querySelector("#scanProgress"),
+  scanProgressText: document.querySelector("#scanProgressText"),
+  scanResults: document.querySelector("#scanResults"),
   toast: document.querySelector("#toast")
 };
 
@@ -468,6 +478,328 @@ function showToast(message) {
   toastTimer = setTimeout(() => els.toast.classList.remove("is-visible"), 1800);
 }
 
+
+let referenceSignaturePromise = null;
+
+function loadImageSource(source) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.decoding = "async";
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Image could not be loaded"));
+    image.src = source;
+  });
+}
+
+async function loadImageFile(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    return await loadImageSource(url);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function findContentBands(image, axis) {
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth || image.width;
+  canvas.height = image.naturalHeight || image.height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(image, 0, 0);
+  const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
+  const length = axis === "x" ? width : height;
+  const crossLength = axis === "x" ? height : width;
+  const active = new Array(length).fill(false);
+
+  for (let index = 0; index < length; index += 1) {
+    let visible = 0;
+    for (let cross = 0; cross < crossLength; cross += 2) {
+      const x = axis === "x" ? index : cross;
+      const y = axis === "x" ? cross : index;
+      const offset = (y * width + x) * 4;
+      if (Math.max(data[offset], data[offset + 1], data[offset + 2]) > 24) visible += 1;
+    }
+    active[index] = visible / Math.ceil(crossLength / 2) > 0.035;
+  }
+
+  const bands = [];
+  let start = null;
+  for (let index = 0; index <= active.length; index += 1) {
+    if (active[index] && start === null) start = index;
+    if ((!active[index] || index === active.length) && start !== null) {
+      if (index - start > Math.max(45, length * 0.035)) bands.push({ start, end: index - 1 });
+      start = null;
+    }
+  }
+  return bands;
+}
+
+function detectInventoryCells(image) {
+  const columns = findContentBands(image, "x");
+  const rows = findContentBands(image, "y");
+  if (!columns.length || !rows.length || columns.length * rows.length > 100) {
+    throw new Error("Could not identify a clean card grid. Crop the screenshot to the inventory cards and try again.");
+  }
+  return rows.flatMap((row) => columns.map((column) => ({
+    x: column.start,
+    y: row.start,
+    width: column.end - column.start + 1,
+    height: row.end - row.start + 1
+  })));
+}
+
+function imageSignature(image, sx, sy, sw, sh) {
+  const width = 18;
+  const height = 14;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(image, sx, sy, sw, sh, 0, 0, width, height);
+  const pixels = context.getImageData(0, 0, width, height).data;
+  const signature = [];
+  let average = 0;
+  for (let index = 0; index < pixels.length; index += 4) {
+    average += (pixels[index] + pixels[index + 1] + pixels[index + 2]) / 3;
+  }
+  average = average / (pixels.length / 4) || 1;
+  for (let index = 0; index < pixels.length; index += 4) {
+    const red = pixels[index] / 255;
+    const green = pixels[index + 1] / 255;
+    const blue = pixels[index + 2] / 255;
+    const total = red + green + blue + 0.08;
+    const luminance = ((pixels[index] + pixels[index + 1] + pixels[index + 2]) / 3) / average;
+    signature.push(red / total, green / total, blue / total, Math.min(2, luminance) * 0.38);
+  }
+  return signature;
+}
+
+function signatureDistance(left, right) {
+  let total = 0;
+  const length = Math.min(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = left[index] - right[index];
+    total += difference * difference;
+  }
+  return total / Math.max(1, length);
+}
+
+async function getReferenceSignatures() {
+  if (referenceSignaturePromise) return referenceSignaturePromise;
+  referenceSignaturePromise = (async () => {
+    const references = [];
+    for (let start = 0; start < state.cards.length; start += 12) {
+      const batch = state.cards.slice(start, start + 12);
+      const loaded = await Promise.all(batch.map(async (card) => {
+        try {
+          const image = await loadImageSource(imageURL(card));
+          return {
+            card,
+            signature: imageSignature(image, image.width * 0.03, image.height * 0.02, image.width * 0.94, image.height * 0.7)
+          };
+        } catch {
+          return null;
+        }
+      }));
+      references.push(...loaded.filter(Boolean));
+      els.scanProgressText.textContent = `Preparing card references… ${Math.min(start + batch.length, state.cards.length)}/${state.cards.length}`;
+    }
+    return references;
+  })();
+  return referenceSignaturePromise;
+}
+
+function normalizedMask(points, outputWidth = 48, outputHeight = 30) {
+  if (!points.length) return new Uint8Array(outputWidth * outputHeight);
+  const minX = Math.min(...points.map((point) => point.x));
+  const maxX = Math.max(...points.map((point) => point.x));
+  const minY = Math.min(...points.map((point) => point.y));
+  const maxY = Math.max(...points.map((point) => point.y));
+  const mask = new Uint8Array(outputWidth * outputHeight);
+  const sourceWidth = Math.max(1, maxX - minX);
+  const sourceHeight = Math.max(1, maxY - minY);
+  for (const point of points) {
+    const x = Math.min(outputWidth - 1, Math.round(((point.x - minX) / sourceWidth) * (outputWidth - 1)));
+    const y = Math.min(outputHeight - 1, Math.round(((point.y - minY) / sourceHeight) * (outputHeight - 1)));
+    mask[y * outputWidth + x] = 1;
+  }
+  return mask;
+}
+
+function quantityTemplate(text, fontFamily) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 90;
+  canvas.height = 48;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.fillStyle = "#fff";
+  context.font = `bold 38px ${fontFamily}`;
+  context.textBaseline = "top";
+  context.fillText(text, 1, 0);
+  const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
+  const points = [];
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (data[(y * width + x) * 4 + 3] > 80) points.push({ x, y });
+    }
+  }
+  return normalizedMask(points);
+}
+
+function maskDistance(left, right) {
+  let mismatch = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) mismatch += 1;
+  }
+  return mismatch / left.length;
+}
+
+function detectQuantity(image, cell) {
+  const sx = cell.x + cell.width * 0.68;
+  const sy = cell.y + cell.height * 0.04;
+  const sw = cell.width * 0.28;
+  const sh = cell.height * 0.21;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(sw));
+  canvas.height = Math.max(1, Math.round(sh));
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(image, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
+  const points = [];
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      const red = data[offset];
+      const green = data[offset + 1];
+      const blue = data[offset + 2];
+      if (red > 180 && green > 150 && blue < 110 && red > blue * 1.5) points.push({ x, y });
+    }
+  }
+  if (points.length < Math.max(55, width * height * 0.045)) return 1;
+  const input = normalizedMask(points);
+  const fonts = ["Georgia", '"Times New Roman"', "serif"];
+  const score = (quantity) => Math.min(...fonts.map((font) => maskDistance(input, quantityTemplate(`X${quantity}`, font))));
+  return score(4) + 0.01 < score(2) ? 4 : 2;
+}
+
+function cropPreview(image, cell) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 100;
+  canvas.height = 100;
+  const context = canvas.getContext("2d");
+  context.drawImage(image, cell.x, cell.y, cell.width, cell.height, 0, 0, 100, 100);
+  return canvas.toDataURL("image/jpeg", 0.78);
+}
+
+function bestCardMatches(signature, references) {
+  const ranked = references
+    .map((reference) => ({ card: reference.card, distance: signatureDistance(signature, reference.signature) }))
+    .sort((left, right) => left.distance - right.distance);
+  const best = ranked[0];
+  const second = ranked[1] || { distance: best.distance * 1.5 };
+  const separation = Math.max(0, (second.distance - best.distance) / Math.max(second.distance, 0.0001));
+  return {
+    card: best.card,
+    confidence: Math.round(Math.min(99, Math.max(1, separation * 180)))
+  };
+}
+
+function renderScanReview() {
+  const options = state.cards
+    .map((card) => `<option value="${escapeHTML(card.id)}">${escapeHTML(card.name)}</option>`)
+    .join("");
+  els.scanSummary.textContent = `${state.scanResults.length} card slots detected. Review low-confidence matches before importing.`;
+  els.scanResults.innerHTML = state.scanResults.map((result, index) => {
+    const selectedOptions = options.replace(`value="${escapeHTML(result.cardId)}"`, `value="${escapeHTML(result.cardId)}" selected`);
+    const confidenceClass = result.confidence >= 35 ? "is-good" : "needs-review";
+    return `
+      <div class="scan-result" data-scan-result="${index}">
+        <img src="${result.preview}" alt="Detected inventory card ${index + 1}">
+        <div class="scan-result-fields">
+          <label>Matched card<select data-scan-card="${index}">${selectedOptions}</select></label>
+          <span class="scan-confidence ${confidenceClass}">${result.confidence}% visual confidence</span>
+        </div>
+        <label class="scan-quantity">Copies<input data-scan-quantity="${index}" type="number" min="1" max="99" value="${result.quantity}"></label>
+      </div>
+    `;
+  }).join("");
+  els.scanProgress.hidden = true;
+  els.scanAdd.disabled = false;
+  els.scanReplace.disabled = false;
+}
+
+async function scanInventoryImage(file) {
+  if (!state.cards.length) {
+    showToast("Wait for the card library to finish loading");
+    return;
+  }
+  els.scanModal.hidden = false;
+  document.body.style.overflow = "hidden";
+  els.scanProgress.hidden = false;
+  els.scanProgressText.textContent = "Finding cards in the screenshot…";
+  els.scanResults.innerHTML = "";
+  els.scanSummary.textContent = "The screenshot is processed locally in your browser.";
+  els.scanAdd.disabled = true;
+  els.scanReplace.disabled = true;
+  try {
+    const image = await loadImageFile(file);
+    const cells = detectInventoryCells(image);
+    const references = await getReferenceSignatures();
+    if (!references.length) throw new Error("Local reference card images could not be loaded.");
+    const results = [];
+    for (let index = 0; index < cells.length; index += 1) {
+      const cell = cells[index];
+      els.scanProgressText.textContent = `Matching card ${index + 1}/${cells.length}…`;
+      const signature = imageSignature(
+        image,
+        cell.x + cell.width * 0.05,
+        cell.y + cell.height * 0.03,
+        cell.width * 0.9,
+        cell.height * 0.72
+      );
+      const match = bestCardMatches(signature, references);
+      results.push({
+        cardId: match.card.id,
+        confidence: match.confidence,
+        quantity: detectQuantity(image, cell),
+        preview: cropPreview(image, cell)
+      });
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+    state.scanResults = results;
+    renderScanReview();
+  } catch (error) {
+    console.error("Inventory screenshot scan failed", error);
+    els.scanProgress.hidden = true;
+    els.scanSummary.textContent = error.message || "The screenshot could not be read.";
+    els.scanResults.innerHTML = '<div class="scan-error">Crop the image to the card grid, then try again.</div>';
+  }
+}
+
+function closeScanModal() {
+  els.scanModal.hidden = true;
+  document.body.style.overflow = els.cardModal.hidden ? "" : "hidden";
+}
+
+function applyScanResults(mode) {
+  const imported = {};
+  for (const result of state.scanResults) {
+    imported[result.cardId] = (imported[result.cardId] || 0) + Math.max(1, Number(result.quantity) || 1);
+  }
+  if (mode === "replace") state.collection = imported;
+  else {
+    for (const [id, quantity] of Object.entries(imported)) {
+      state.collection[id] = ownedCount(id) + quantity;
+    }
+  }
+  state.team = state.team.filter((id) => ownedCount(id) > 0);
+  saveState();
+  updateCollectionSummary();
+  renderTeam();
+  renderGrid();
+  closeScanModal();
+  showToast(`${Object.keys(imported).length} cards imported from screenshot`);
+}
+
 function exportCollection() {
   const data = {
     version: 1,
@@ -586,9 +918,24 @@ function bindEvents() {
   els.importButton.addEventListener("click", () => els.importInput.click());
   els.importInput.addEventListener("change", () => {
     const file = els.importInput.files?.[0];
-    if (file) importCollection(file);
+    if (file?.type.startsWith("image/")) scanInventoryImage(file);
+    else if (file) importCollection(file);
     els.importInput.value = "";
   });
+
+  els.scanClose.addEventListener("click", closeScanModal);
+  els.scanCancel.addEventListener("click", closeScanModal);
+  els.scanModal.addEventListener("click", (event) => {
+    if (event.target === els.scanModal) closeScanModal();
+  });
+  els.scanResults.addEventListener("change", (event) => {
+    const cardSelect = event.target.closest("[data-scan-card]");
+    if (cardSelect) state.scanResults[Number(cardSelect.dataset.scanCard)].cardId = cardSelect.value;
+    const quantityInput = event.target.closest("[data-scan-quantity]");
+    if (quantityInput) state.scanResults[Number(quantityInput.dataset.scanQuantity)].quantity = Math.max(1, Number(quantityInput.value) || 1);
+  });
+  els.scanAdd.addEventListener("click", () => applyScanResults("add"));
+  els.scanReplace.addEventListener("click", () => applyScanResults("replace"));
   els.exportButton.addEventListener("click", exportCollection);
 
   els.clearCollectionButton.addEventListener("click", () => {
@@ -604,7 +951,10 @@ function bindEvents() {
   });
 
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeModal();
+    if (event.key === "Escape") {
+      if (!els.scanModal.hidden) closeScanModal();
+      else closeModal();
+    }
   });
 }
 
