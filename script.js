@@ -1,8 +1,9 @@
 const LIBRARY_ROOT = "https://raw.githubusercontent.com/DaddyDrag0/Card-Fantasy-Library/main/";
 const DATA_URL = `${LIBRARY_ROOT}data/cards.json`;
 const IMAGE_ROOT = `${LIBRARY_ROOT}assets/cards/`;
-const STORAGE_KEY = "card-fantasy-index-state-v1";
-const MAX_TEAM_SIZE = 5;
+const STORAGE_KEY = "cf-deck-builder-state-v1";
+const LEGACY_STORAGE_KEY = "card-fantasy-index-state-v1";
+const MAX_TEAM_SIZE = 4;
 
 const state = {
   cards: [],
@@ -144,7 +145,7 @@ function saveState() {
 
 function loadSavedState() {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY) || "{}");
     if (saved.collection && typeof saved.collection === "object") state.collection = saved.collection;
     if (Array.isArray(saved.team)) state.team = saved.team.slice(0, MAX_TEAM_SIZE);
     if (typeof saved.border === "string") state.border = saved.border;
