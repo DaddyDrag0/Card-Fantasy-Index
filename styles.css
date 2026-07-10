@@ -285,3 +285,5 @@ button{color:inherit}.app-shell{display:grid;grid-template-columns:var(--sidebar
 .scan-quantity input{text-align:center}.scan-actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;padding:14px 18px;border-top:1px solid #242128;background:#0a0a0c}
 .scan-error{display:grid;place-items:center;min-height:180px;color:#d07e87;text-align:center}
 @media(max-width:680px){.scan-result{grid-template-columns:58px 1fr}.scan-result>img{width:58px;height:58px}.scan-quantity{grid-column:1/-1}.scan-actions{grid-template-columns:1fr}}
+
+.scan-method{display:block;color:#77717d;font-size:9px;line-height:1.35}
