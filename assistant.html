@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CF Deck Assistant</title>
+  <meta name="description" content="Card Fantasy team recommendation and battle-planning interface.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assistant.css?v=1">
+</head>
+<body>
+  <div class="assistant-shell">
+    <aside class="assistant-sidebar">
+      <a class="assistant-brand" href="index.html">
+        <img src="assets/cf-brand-icon.png?v=1" alt="">
+        <span><strong>Card Fantasy</strong><small>Deck Assistant</small></span>
+      </a>
+
+      <nav class="assistant-nav" aria-label="Deck assistant navigation">
+        <a href="index.html"><span>←</span> Deck Builder</a>
+        <a class="is-active" href="assistant.html"><span>✦</span> Assistant</a>
+      </nav>
+
+      <section class="assistant-collection">
+        <div><span>Owned cards</span><strong id="assistantOwnedCount">0 / 135</strong></div>
+        <div class="assistant-progress"><span id="assistantOwnedProgress"></span></div>
+      </section>
+
+      <section class="assistant-current-team">
+        <div class="side-heading"><span>Current team</span><small id="assistantTeamCount">0/4</small></div>
+        <div id="assistantCurrentTeam"></div>
+      </section>
+    </aside>
+
+    <main class="assistant-main">
+      <header class="assistant-hero">
+        <div>
+          <p class="eyebrow">Card Fantasy</p>
+          <h1>AI Deck Assistant</h1>
+          <p>Choose an opponent and a goal to receive a four-card team recommendation from your owned collection.</p>
+        </div>
+        <span class="phase-badge">Interface setup</span>
+      </header>
+
+      <section class="assistant-setup panel">
+        <div class="panel-heading">
+          <div><span class="step-number">1</span><div><h2>Configure recommendation</h2><p>Enemy and combat data will connect here later.</p></div></div>
+        </div>
+
+        <div class="assistant-fields">
+          <label>
+            <span>Opponent or boss</span>
+            <select id="assistantTarget" disabled>
+              <option>No enemy data imported yet</option>
+            </select>
+          </label>
+          <label>
+            <span>Recommendation goal</span>
+            <select id="assistantGoal">
+              <option value="balanced">Balanced</option>
+              <option value="survival">Maximum survival</option>
+              <option value="damage">Maximum damage</option>
+              <option value="counter">Counter the opponent</option>
+            </select>
+          </label>
+          <button id="assistantAnalyze" type="button" disabled>Analyze owned cards</button>
+        </div>
+
+        <div class="data-notice">
+          <span>!</span>
+          <p><strong>Waiting for combat data.</strong> Recommendations will unlock after enemy stats, battle formulas, and structured card effects are connected.</p>
+        </div>
+      </section>
+
+      <section class="recommendation-grid">
+        <article class="panel recommendation-panel">
+          <div class="panel-heading">
+            <div><span class="step-number">2</span><div><h2>Recommended team</h2><p>The best four cards and their battle order.</p></div></div>
+            <span class="locked-label">Locked</span>
+          </div>
+          <div class="recommended-slots">
+            <div><span>1</span><strong>Team slot</strong><small>Waiting for analysis</small></div>
+            <div><span>2</span><strong>Team slot</strong><small>Waiting for analysis</small></div>
+            <div><span>3</span><strong>Team slot</strong><small>Waiting for analysis</small></div>
+            <div><span>4</span><strong>Team slot</strong><small>Waiting for analysis</small></div>
+          </div>
+        </article>
+
+        <article class="panel explanation-panel">
+          <div class="panel-heading"><div><span class="step-number">3</span><div><h2>Assistant explanation</h2><p>Why the team works against the selected target.</p></div></div></div>
+          <div class="empty-explanation">
+            <span>✦</span>
+            <p>Team strengths, counters, card order, and possible replacements will appear here.</p>
+          </div>
+        </article>
+      </section>
+
+      <section class="owned-preview panel">
+        <div class="panel-heading">
+          <div><h2>Your available collection</h2><p>The assistant will only recommend cards you own.</p></div>
+          <a href="index.html">Edit collection</a>
+        </div>
+        <div class="owned-strip" id="assistantOwnedStrip"></div>
+      </section>
+
+      <section class="future-tools">
+        <article class="future-card">
+          <span class="future-icon">⚔</span>
+          <div><p class="eyebrow">Future tool</p><h2>Battle Simulator</h2><p>Run the recommended team through the real turn and ability formulas.</p></div>
+          <span class="locked-label">Needs formulas</span>
+        </article>
+        <article class="future-card">
+          <span class="future-icon">▲</span>
+          <div><p class="eyebrow">Future tool</p><h2>Tower Estimate</h2><p>Estimate a likely floor range after tower enemies and scaling formulas are imported.</p></div>
+          <span class="locked-label">Needs tower data</span>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script src="assistant.js?v=1"></script>
+</body>
+</html>
