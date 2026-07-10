@@ -192,3 +192,7 @@ button{color:inherit}.app-shell{display:grid;grid-template-columns:var(--sidebar
   .control-row{grid-template-columns:1fr}
   .range-control{grid-column:auto;min-width:0}
 }
+
+/* Hidden states must not reserve layout space after loading */
+.loading-state[hidden],
+.empty-state[hidden]{display:none!important}
