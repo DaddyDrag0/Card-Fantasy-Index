@@ -1,6 +1,7 @@
 const LIBRARY_ROOT = "./";
 const DATA_URL = `${LIBRARY_ROOT}data/cards.json`;
 const IMAGE_ROOT = `${LIBRARY_ROOT}assets/cards/`;
+const CARD_PARTS = Array.from({ length: 7 }, (_, index) => `data/cards-${index + 1}.json`);
 const STORAGE_KEY = "cf-deck-builder-state-v1";
 const LEGACY_STORAGE_KEY = "card-fantasy-index-state-v1";
 const MAX_TEAM_SIZE = 4;
@@ -558,9 +559,15 @@ async function fetchJSON(url) {
 
 async function loadCards() {
   const index = await fetchJSON(DATA_URL);
-  const parts = await Promise.all((index.parts || []).map((path) => fetchJSON(`${LIBRARY_ROOT}${path}`)));
-  state.cards = parts.flatMap((part) => Array.isArray(part.cards) ? part.cards : [])
+  const partPaths = Array.isArray(index.parts) && index.parts.length ? index.parts : CARD_PARTS;
+  const parts = await Promise.all(partPaths.map((path) => fetchJSON(`${LIBRARY_ROOT}${path}`)));
+  const candidates = [
+    ...(Array.isArray(index.cards) ? index.cards : []),
+    ...parts.flatMap((part) => Array.isArray(part.cards) ? part.cards : [])
+  ];
+  state.cards = [...new Map(candidates.map((card) => [card.id, card])).values()]
     .filter((card) => Number(card.odds) > 0);
+  if (!state.cards.length) throw new Error("No local card records were found");
   state.meta = index.meta || { variants: [] };
 }
 
@@ -577,8 +584,8 @@ async function init() {
     renderGrid();
     els.loadingState.hidden = true;
   } catch (error) {
-    console.error("Card library failed to load", error);
-    els.loadingState.innerHTML = "The Card-Fantasy-Library data could not be loaded. Refresh the page and try again.";
+    console.error("Local card data failed to load", error);
+    els.loadingState.innerHTML = "The local card data could not be loaded. Refresh the page and try again.";
   }
 }
 
