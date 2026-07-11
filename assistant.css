@@ -36,3 +36,28 @@
   .boss-stat{grid-column:3/5;display:flex;justify-content:space-between;padding:7px 0 0;border-left:0;border-top:1px solid #211e24}
   .boss-stat+.boss-stat{grid-column:3/5;margin-top:-9px;border-top:0}
 }
+
+
+/* Live private-API tower enemy generator */
+.future-tools{align-items:stretch}
+.tower-tool.is-live{grid-column:1/-1;align-items:flex-start;border-color:#3b2850;background:linear-gradient(135deg,rgba(94,25,130,.12),rgba(8,8,11,.96) 48%)}
+.tower-tool-content{min-width:0;flex:1}
+.tower-tool-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}
+.live-label{padding:6px 9px;border:1px solid #286342;border-radius:6px;color:#78d899;background:#10271a;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+.tower-controls{display:grid;grid-template-columns:minmax(150px,240px) minmax(160px,220px);gap:10px;margin-top:16px}
+.tower-controls label{display:grid;gap:6px}.tower-controls label span{color:#716a76;font-size:8px;text-transform:uppercase;letter-spacing:.09em}
+.tower-controls input,.tower-controls button{height:42px;border:1px solid #312c36;border-radius:7px;color:#e7e2ea;background:#0c0c10;outline:0}
+.tower-controls input{padding:0 12px}.tower-controls input:focus{border-color:#812eb1;box-shadow:0 0 0 2px rgba(139,24,210,.1)}
+.tower-controls button{align-self:end;border-color:#672387;background:#47125f;font-size:10px;font-weight:700}.tower-controls button:hover{background:#5b1678}.tower-controls button:disabled{cursor:wait;opacity:.65}
+.tower-result{display:grid;grid-template-columns:68px minmax(180px,1fr) minmax(110px,.35fr) minmax(110px,.35fr);align-items:center;gap:14px;margin-top:14px;padding:10px;border:1px solid #2b2730;border-radius:9px;background:#09090c}
+.tower-result[hidden],.tower-error[hidden]{display:none!important}
+.tower-enemy-art{width:68px;height:68px;overflow:hidden;border:1px solid #3a3040;border-radius:7px;background:#08080a}.tower-enemy-art img{display:block;width:100%;height:100%;object-fit:cover}
+.tower-enemy-name{display:grid;gap:3px}.tower-enemy-name small,.tower-result-stat small{color:#6d6671;font-size:8px;text-transform:uppercase;letter-spacing:.08em}.tower-enemy-name strong{font:600 13px Cinzel,serif}.tower-enemy-name span{color:#9552b9;font-size:9px}
+.tower-result-stat{display:grid;gap:4px;padding-left:14px;border-left:1px solid #27232b}.tower-result-stat strong{font-size:14px}
+.tower-error{margin:10px 0 0;color:#e0838d;font-size:10px}
+@media(max-width:760px){
+  .tower-controls{grid-template-columns:1fr}
+  .tower-result{grid-template-columns:58px 1fr}
+  .tower-enemy-art{width:58px;height:58px}
+  .tower-result-stat{padding:8px 0 0;border-left:0;border-top:1px solid #27232b}
+}
