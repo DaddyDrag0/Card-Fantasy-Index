@@ -4,12 +4,60 @@ const IMAGE_ROOT = `${LIBRARY_ROOT}assets/cards/`;
 const STORAGE_KEY = "cf-deck-builder-state-v1";
 const MAX_TEAM_SIZE = 4;
 
+const BOSS_ENCOUNTERS = [
+  {
+    id: "fungal-crown",
+    name: "Fungal Crown Boss",
+    enemies: [
+      { name: "Shroom Commander", hp: 46723, atk: 15574 },
+      { name: "Shroom King", hp: 69414, atk: 23136 },
+      { name: "The Wandering Shroom", hp: 148236, atk: 49410 }
+    ]
+  },
+  {
+    id: "neptune",
+    name: "Neptune Boss",
+    enemies: [
+      { name: "Deep Sea Fisherman", hp: 29534, atk: 9841 },
+      { name: "Diver", hp: 51031, atk: 17009 },
+      { name: "Siren", hp: 68198, atk: 22730 },
+      { name: "Neptune", hp: 119811, atk: 39935 }
+    ]
+  },
+  {
+    id: "storm-leviathan",
+    name: "Storm Leviathan Boss",
+    enemies: [
+      { name: "Storm Leviathan", hp: 449706, atk: 149902 }
+    ]
+  },
+  {
+    id: "secret-summer",
+    name: "Secret Summer Boss",
+    enemies: [
+      { name: "Secret Boss", hp: 539520, atk: 179840 }
+    ]
+  },
+  {
+    id: "world-7-secret",
+    name: "World 7 Secret Boss",
+    enemies: [
+      { name: "Abyssal Nightmare", hp: 369859, atk: 123284 }
+    ]
+  }
+];
+
 const els = {
   ownedCount: document.querySelector("#assistantOwnedCount"),
   ownedProgress: document.querySelector("#assistantOwnedProgress"),
   teamCount: document.querySelector("#assistantTeamCount"),
   currentTeam: document.querySelector("#assistantCurrentTeam"),
-  ownedStrip: document.querySelector("#assistantOwnedStrip")
+  ownedStrip: document.querySelector("#assistantOwnedStrip"),
+  target: document.querySelector("#assistantTarget"),
+  bossName: document.querySelector("#bossPreviewName"),
+  bossSummary: document.querySelector("#bossPreviewSummary"),
+  bossTotal: document.querySelector("#bossEncounterTotal"),
+  bossStages: document.querySelector("#bossStageList")
 };
 
 const state = { cards: [], collection: {}, team: [] };
@@ -71,16 +119,59 @@ function renderSummary() {
     .join("");
 }
 
+function normalizeName(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function findCardByName(name) {
+  const target = normalizeName(name);
+  return state.cards.find((card) => normalizeName(card.name) === target);
+}
+
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString("en-US");
+}
+
+function renderBossOptions() {
+  els.target.innerHTML = BOSS_ENCOUNTERS
+    .map((boss) => `<option value="${boss.id}">${escapeHTML(boss.name)}</option>`)
+    .join("");
+}
+
+function renderSelectedBoss() {
+  const boss = BOSS_ENCOUNTERS.find((item) => item.id === els.target.value) || BOSS_ENCOUNTERS[0];
+  els.bossName.textContent = boss.name;
+  els.bossSummary.textContent = `${boss.enemies.length} enemy${boss.enemies.length === 1 ? "" : " stages"} in battle order.`;
+  els.bossTotal.textContent = `${boss.enemies.length} stage${boss.enemies.length === 1 ? "" : "s"}`;
+  els.bossStages.innerHTML = boss.enemies.map((enemy, index) => {
+    const card = findCardByName(enemy.name);
+    const art = card
+      ? `<img src="${imageURL(card)}" alt="">`
+      : `<div class="boss-stage-fallback">CF</div>`;
+    return `<article class="boss-stage">
+      <span class="boss-order">${index + 1}</span>
+      <div class="boss-stage-art">${art}</div>
+      <div class="boss-stage-name"><small>Stage ${index + 1}</small><strong>${escapeHTML(enemy.name)}</strong></div>
+      <div class="boss-stat"><small>HP</small><strong>${formatNumber(enemy.hp)}</strong></div>
+      <div class="boss-stat"><small>ATK</small><strong>${formatNumber(enemy.atk)}</strong></div>
+    </article>`;
+  }).join("");
+}
+
 async function init() {
   loadCollection();
   try {
     await loadCards();
     state.team = state.team.filter((id) => state.cards.some((card) => card.id === id) && ownedCount(id) > 0);
     renderSummary();
+    renderBossOptions();
+    renderSelectedBoss();
   } catch (error) {
     console.error("Assistant data failed to load", error);
     els.ownedStrip.innerHTML = '<div class="owned-empty">The local card data could not be loaded.</div>';
   }
 }
+
+els.target.addEventListener("change", renderSelectedBoss);
 
 init();
