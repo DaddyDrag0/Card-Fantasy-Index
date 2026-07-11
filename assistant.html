@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assistant.css?v=1">
+  <link rel="stylesheet" href="assistant.css?v=2">
 </head>
 <body>
   <div class="assistant-shell">
@@ -39,22 +39,20 @@
         <div>
           <p class="eyebrow">Card Fantasy</p>
           <h1>AI Deck Assistant</h1>
-          <p>Choose an opponent and a goal to receive a four-card team recommendation from your owned collection.</p>
+          <p>Choose a boss to inspect its complete enemy order, HP, and ATK before building your four-card team.</p>
         </div>
-        <span class="phase-badge">Interface setup</span>
+        <span class="phase-badge">Boss data connected</span>
       </header>
 
       <section class="assistant-setup panel">
         <div class="panel-heading">
-          <div><span class="step-number">1</span><div><h2>Configure recommendation</h2><p>Enemy and combat data will connect here later.</p></div></div>
+          <div><span class="step-number">1</span><div><h2>Select an encounter</h2><p>Five boss encounters are currently available.</p></div></div>
         </div>
 
         <div class="assistant-fields">
           <label>
             <span>Opponent or boss</span>
-            <select id="assistantTarget" disabled>
-              <option>No enemy data imported yet</option>
-            </select>
+            <select id="assistantTarget" aria-label="Choose a boss"></select>
           </label>
           <label>
             <span>Recommendation goal</span>
@@ -65,19 +63,27 @@
               <option value="counter">Counter the opponent</option>
             </select>
           </label>
-          <button id="assistantAnalyze" type="button" disabled>Analyze owned cards</button>
+          <button id="assistantAnalyze" type="button" disabled>Recommendations need formulas</button>
         </div>
 
-        <div class="data-notice">
-          <span>!</span>
-          <p><strong>Waiting for combat data.</strong> Recommendations will unlock after enemy stats, battle formulas, and structured card effects are connected.</p>
+        <div class="data-notice is-connected">
+          <span>✓</span>
+          <p><strong>Boss data connected.</strong> Enemy order, HP, and ATK are exact. Automatic team recommendations remain locked until the battle formulas are added.</p>
         </div>
+      </section>
+
+      <section class="boss-preview panel">
+        <div class="panel-heading">
+          <div><span class="step-number">2</span><div><h2 id="bossPreviewName">Selected boss</h2><p id="bossPreviewSummary">Enemy lineup and exact stats.</p></div></div>
+          <span class="encounter-total" id="bossEncounterTotal"></span>
+        </div>
+        <div class="boss-stage-list" id="bossStageList"></div>
       </section>
 
       <section class="recommendation-grid">
         <article class="panel recommendation-panel">
           <div class="panel-heading">
-            <div><span class="step-number">2</span><div><h2>Recommended team</h2><p>The best four cards and their battle order.</p></div></div>
+            <div><span class="step-number">3</span><div><h2>Recommended team</h2><p>The best four cards and their battle order.</p></div></div>
             <span class="locked-label">Locked</span>
           </div>
           <div class="recommended-slots">
@@ -89,7 +95,7 @@
         </article>
 
         <article class="panel explanation-panel">
-          <div class="panel-heading"><div><span class="step-number">3</span><div><h2>Assistant explanation</h2><p>Why the team works against the selected target.</p></div></div></div>
+          <div class="panel-heading"><div><span class="step-number">4</span><div><h2>Assistant explanation</h2><p>Why the team works against the selected target.</p></div></div></div>
           <div class="empty-explanation">
             <span>✦</span>
             <p>Team strengths, counters, card order, and possible replacements will appear here.</p>
@@ -120,6 +126,6 @@
     </main>
   </div>
 
-  <script src="assistant.js?v=1"></script>
+  <script src="assistant.js?v=2"></script>
 </body>
 </html>
