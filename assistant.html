@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assistant.css?v=2">
+  <link rel="stylesheet" href="assistant.css?v=3">
 </head>
 <body>
   <div class="assistant-shell">
@@ -117,15 +117,30 @@
           <div><p class="eyebrow">Future tool</p><h2>Battle Simulator</h2><p>Run the recommended team through the real turn and ability formulas.</p></div>
           <span class="locked-label">Needs formulas</span>
         </article>
-        <article class="future-card">
+        <article class="future-card tower-tool is-live">
           <span class="future-icon">▲</span>
-          <div><p class="eyebrow">Future tool</p><h2>Tower Estimate</h2><p>Estimate a likely floor range after tower enemies and scaling formulas are imported.</p></div>
-          <span class="locked-label">Needs tower data</span>
+          <div class="tower-tool-content">
+            <div class="tower-tool-heading">
+              <div><p class="eyebrow">Live tool</p><h2>Tower Enemy Generator</h2><p>Generate a possible random enemy with the private HP scaling endpoint.</p></div>
+              <span class="live-label">Connected</span>
+            </div>
+            <div class="tower-controls">
+              <label for="towerFloor"><span>Floor</span><input id="towerFloor" type="number" min="1" step="1" value="1"></label>
+              <button id="towerGenerate" type="button">Generate enemy</button>
+            </div>
+            <div class="tower-result" id="towerResult" hidden>
+              <div class="tower-enemy-art"><img id="towerEnemyImage" alt=""></div>
+              <div class="tower-enemy-name"><small>Possible random enemy</small><strong id="towerEnemyName">Enemy</strong><span id="towerResultFloor">Floor 1</span></div>
+              <div class="tower-result-stat"><small>HP</small><strong id="towerEnemyHP">0</strong></div>
+              <div class="tower-result-stat"><small>ATK</small><strong id="towerEnemyATK">0</strong></div>
+            </div>
+            <p class="tower-error" id="towerError" hidden></p>
+          </div>
         </article>
       </section>
     </main>
   </div>
 
-  <script src="assistant.js?v=2"></script>
+  <script src="assistant.js?v=3"></script>
 </body>
 </html>
