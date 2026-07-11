@@ -3,6 +3,7 @@ const DATA_URL = `${LIBRARY_ROOT}data/cards.json`;
 const IMAGE_ROOT = `${LIBRARY_ROOT}assets/cards/`;
 const STORAGE_KEY = "cf-deck-builder-state-v1";
 const MAX_TEAM_SIZE = 4;
+const TOWER_API_URL = "https://script.google.com/macros/s/AKfycbwndb-XXP5r6-fIa-Dge9yBnvF0UZrVdyONry4b3f7H9oTQ4R0HH3baj78Br60m8KQc/exec";
 
 const BOSS_ENCOUNTERS = [
   {
@@ -57,7 +58,16 @@ const els = {
   bossName: document.querySelector("#bossPreviewName"),
   bossSummary: document.querySelector("#bossPreviewSummary"),
   bossTotal: document.querySelector("#bossEncounterTotal"),
-  bossStages: document.querySelector("#bossStageList")
+  bossStages: document.querySelector("#bossStageList"),
+  towerFloor: document.querySelector("#towerFloor"),
+  towerGenerate: document.querySelector("#towerGenerate"),
+  towerResult: document.querySelector("#towerResult"),
+  towerEnemyImage: document.querySelector("#towerEnemyImage"),
+  towerEnemyName: document.querySelector("#towerEnemyName"),
+  towerResultFloor: document.querySelector("#towerResultFloor"),
+  towerEnemyHP: document.querySelector("#towerEnemyHP"),
+  towerEnemyATK: document.querySelector("#towerEnemyATK"),
+  towerError: document.querySelector("#towerError")
 };
 
 const state = { cards: [], collection: {}, team: [] };
@@ -158,6 +168,56 @@ function renderSelectedBoss() {
   }).join("");
 }
 
+async function generateTowerEnemy() {
+  const floor = Number(els.towerFloor.value);
+  els.towerError.hidden = true;
+
+  if (!Number.isInteger(floor) || floor < 1) {
+    els.towerError.textContent = "Enter a whole-number floor of 1 or higher.";
+    els.towerError.hidden = false;
+    return;
+  }
+
+  els.towerGenerate.disabled = true;
+  els.towerGenerate.textContent = "Generating…";
+
+  try {
+    const response = await fetch(`${TOWER_API_URL}?floor=${encodeURIComponent(floor)}&t=${Date.now()}`, {
+      method: "GET",
+      cache: "no-store",
+      redirect: "follow"
+    });
+    if (!response.ok) throw new Error(`Tower API returned ${response.status}`);
+
+    const data = await response.json();
+    if (data.success === false) throw new Error(data.error || "Tower API rejected the floor.");
+
+    const rawHP = Number(data.generatedValue ?? data.hp ?? data.value);
+    if (!Number.isFinite(rawHP)) throw new Error("Tower API did not return a valid HP value.");
+
+    const hp = Math.round(rawHP);
+    const atk = Math.round(rawHP / 3);
+    const enemy = state.cards[Math.floor(Math.random() * state.cards.length)];
+
+    els.towerEnemyName.textContent = enemy?.name || "Unknown Enemy";
+    els.towerResultFloor.textContent = `Floor ${formatNumber(floor)}`;
+    els.towerEnemyHP.textContent = formatNumber(hp);
+    els.towerEnemyATK.textContent = formatNumber(atk);
+    if (enemy) {
+      els.towerEnemyImage.src = imageURL(enemy);
+      els.towerEnemyImage.alt = enemy.name;
+    }
+    els.towerResult.hidden = false;
+  } catch (error) {
+    console.error("Tower generation failed", error);
+    els.towerError.textContent = "Could not reach the private tower endpoint. Confirm the Apps Script deployment allows anyone to access it.";
+    els.towerError.hidden = false;
+  } finally {
+    els.towerGenerate.disabled = false;
+    els.towerGenerate.textContent = "Generate enemy";
+  }
+}
+
 async function init() {
   loadCollection();
   try {
@@ -173,5 +233,9 @@ async function init() {
 }
 
 els.target.addEventListener("change", renderSelectedBoss);
+els.towerGenerate.addEventListener("click", generateTowerEnemy);
+els.towerFloor.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") generateTowerEnemy();
+});
 
 init();
