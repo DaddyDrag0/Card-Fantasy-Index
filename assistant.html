@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assistant.css?v=3">
+  <link rel="stylesheet" href="assistant.css?v=4">
 </head>
 <body>
   <div class="assistant-shell">
@@ -39,14 +39,14 @@
         <div>
           <p class="eyebrow">Card Fantasy</p>
           <h1>AI Deck Assistant</h1>
-          <p>Choose a boss to inspect its complete enemy order, HP, and ATK before building your four-card team.</p>
+          <p>Choose a boss or generate an Infinite Tower floor, then build the strongest four-card team from your owned collection.</p>
         </div>
-        <span class="phase-badge">Boss data connected</span>
+        <span class="phase-badge">Assistant online</span>
       </header>
 
       <section class="assistant-setup panel">
         <div class="panel-heading">
-          <div><span class="step-number">1</span><div><h2>Select an encounter</h2><p>Five boss encounters are currently available.</p></div></div>
+          <div><span class="step-number">1</span><div><h2>Select a battle</h2><p>Choose a known boss or generate an Infinite Tower floor.</p></div></div>
         </div>
 
         <div class="assistant-fields">
@@ -63,12 +63,12 @@
               <option value="counter">Counter the opponent</option>
             </select>
           </label>
-          <button id="assistantAnalyze" type="button" disabled>Recommendations need formulas</button>
+          <button id="assistantAnalyze" type="button">Build recommended team</button>
         </div>
 
         <div class="data-notice is-connected">
           <span>✓</span>
-          <p><strong>Boss data connected.</strong> Enemy order, HP, and ATK are exact. Automatic team recommendations remain locked until the battle formulas are added.</p>
+          <p><strong>Recommendation engine ready.</strong> It compares your owned cards, current modifiers, stats, roles, and ability descriptions against the selected enemies.</p>
         </div>
       </section>
 
@@ -84,21 +84,21 @@
         <article class="panel recommendation-panel">
           <div class="panel-heading">
             <div><span class="step-number">3</span><div><h2>Recommended team</h2><p>The best four cards and their battle order.</p></div></div>
-            <span class="locked-label">Locked</span>
+            <span class="live-label" id="recommendationStatus">Ready</span>
           </div>
-          <div class="recommended-slots">
-            <div><span>1</span><strong>Team slot</strong><small>Waiting for analysis</small></div>
-            <div><span>2</span><strong>Team slot</strong><small>Waiting for analysis</small></div>
-            <div><span>3</span><strong>Team slot</strong><small>Waiting for analysis</small></div>
-            <div><span>4</span><strong>Team slot</strong><small>Waiting for analysis</small></div>
+          <div class="recommended-slots" id="recommendedSlots">
+            <div><span>1</span><strong>Team slot</strong><small>Run the assistant</small></div>
+            <div><span>2</span><strong>Team slot</strong><small>Run the assistant</small></div>
+            <div><span>3</span><strong>Team slot</strong><small>Run the assistant</small></div>
+            <div><span>4</span><strong>Team slot</strong><small>Run the assistant</small></div>
           </div>
         </article>
 
         <article class="panel explanation-panel">
           <div class="panel-heading"><div><span class="step-number">4</span><div><h2>Assistant explanation</h2><p>Why the team works against the selected target.</p></div></div></div>
-          <div class="empty-explanation">
+          <div class="empty-explanation" id="assistantExplanation">
             <span>✦</span>
-            <p>Team strengths, counters, card order, and possible replacements will appear here.</p>
+            <p>Select a battle and run the assistant to see team strengths, card order, and possible replacements.</p>
           </div>
         </article>
       </section>
@@ -111,17 +111,12 @@
         <div class="owned-strip" id="assistantOwnedStrip"></div>
       </section>
 
-      <section class="future-tools">
-        <article class="future-card">
-          <span class="future-icon">⚔</span>
-          <div><p class="eyebrow">Future tool</p><h2>Battle Simulator</h2><p>Run the recommended team through the real turn and ability formulas.</p></div>
-          <span class="locked-label">Needs formulas</span>
-        </article>
+      <section class="future-tools tower-tools">
         <article class="future-card tower-tool is-live">
           <span class="future-icon">▲</span>
           <div class="tower-tool-content">
             <div class="tower-tool-heading">
-              <div><p class="eyebrow">Live tool</p><h2>Tower Enemy Generator</h2><p>Generate a possible random enemy with the private HP scaling endpoint.</p></div>
+              <div><p class="eyebrow">Live tool</p><h2>Tower Enemy Generator</h2><p>Generate all four random enemies for a floor using the private tower scaling endpoint.</p></div>
               <span class="live-label">Connected</span>
             </div>
             <div class="tower-controls">
@@ -129,10 +124,11 @@
               <button id="towerGenerate" type="button">Generate enemy</button>
             </div>
             <div class="tower-result" id="towerResult" hidden>
-              <div class="tower-enemy-art"><img id="towerEnemyImage" alt=""></div>
-              <div class="tower-enemy-name"><small>Possible random enemy</small><strong id="towerEnemyName">Enemy</strong><span id="towerResultFloor">Floor 1</span></div>
-              <div class="tower-result-stat"><small>HP</small><strong id="towerEnemyHP">0</strong></div>
-              <div class="tower-result-stat"><small>ATK</small><strong id="towerEnemyATK">0</strong></div>
+              <div class="tower-result-heading">
+                <div><small>Generated battle</small><strong id="towerResultFloor">Floor 1</strong></div>
+                <div><span>Each enemy HP <b id="towerEnemyHP">0</b></span><span>Each enemy ATK <b id="towerEnemyATK">0</b></span></div>
+              </div>
+              <div class="tower-enemy-grid" id="towerEnemyGrid"></div>
             </div>
             <p class="tower-error" id="towerError" hidden></p>
           </div>
@@ -141,6 +137,6 @@
     </main>
   </div>
 
-  <script src="assistant.js?v=3"></script>
+  <script src="assistant.js?v=4"></script>
 </body>
 </html>
