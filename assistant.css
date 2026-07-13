@@ -102,3 +102,20 @@
   .tower-enemy-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .tower-result-heading{align-items:flex-start;flex-direction:column}
 }
+
+
+/* Full portrait tower cards matching the main deck grid */
+.tower-enemy-card{position:relative;display:block;overflow:hidden;text-align:left;border:1px solid #242128;border-radius:8px;background:#09090b;box-shadow:0 10px 24px rgba(0,0,0,.28)}
+.tower-enemy-card>.tower-card-order{position:absolute;top:6px;left:6px;z-index:5;display:grid;place-items:center;width:22px;height:22px;border:1px solid #744094;border-radius:5px;color:#f0dfff;background:rgba(17,8,22,.92);font-size:8px;font-weight:700}
+.tower-enemy-card>.tower-card-image-frame{position:relative;top:auto;left:auto;z-index:1;display:block;width:100%;height:auto;overflow:hidden;border:0;border-radius:0;aspect-ratio:41/55;background:#08080a}
+.tower-card-image-frame>img{display:block;width:100%;height:100%;object-fit:cover;aspect-ratio:auto}
+.tower-card-fallback{position:absolute;inset:0;display:grid;place-items:center;padding:15px;color:#5d5662;text-align:center;font:600 10px Cinzel,serif}
+.tower-generated-stats{position:absolute;inset:auto 0 0;z-index:3;display:flex;align-items:flex-end;justify-content:space-between;gap:7px;min-height:19%;padding:18px 7px 7px;background:linear-gradient(transparent,rgba(2,2,3,.96) 48%);font:700 clamp(9px,1vw,13px) Cinzel,serif;text-shadow:0 2px 4px #000}
+.tower-generated-stats span:first-child{color:#65e67e}.tower-generated-stats span:last-child{color:#ff6969}.tower-generated-stats b{color:inherit;font:inherit}
+.tower-enemy-card h3{margin:7px 7px 3px;overflow:hidden;color:#e8e4eb;text-overflow:ellipsis;white-space:nowrap;font:600 10px Cinzel,serif}
+.tower-card-subline,.tower-card-statline{display:flex;justify-content:space-between;gap:6px;margin:0 7px;color:#625c67;font-size:7px}
+.tower-card-statline{margin-top:4px;margin-bottom:7px}.tower-card-statline span:first-child{color:#61c978}.tower-card-statline span:last-child{color:#df6868}.tower-card-statline b{color:inherit}
+@media(max-width:700px){
+  .tower-enemy-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .tower-generated-stats{font-size:10px}
+}
