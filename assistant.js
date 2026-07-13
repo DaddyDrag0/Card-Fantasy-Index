@@ -305,10 +305,21 @@ function renderTowerResult() {
   els.towerEnemyHP.textContent = formatNumber(first.hp);
   els.towerEnemyATK.textContent = formatNumber(first.atk);
   els.towerEnemyGrid.innerHTML = encounter.enemies.map(function (enemy, index) {
+    const source = enemy.card.weather || "Base";
+    const role = cardRole(enemy.card);
     return '<article class="tower-enemy-card">' +
-      '<span>' + (index + 1) + '</span>' +
-      '<img src="' + imageURL(enemy.card) + '" alt="">' +
-      '<strong>' + escapeHTML(enemy.name) + '</strong>' +
+      '<span class="tower-card-order">' + (index + 1) + '</span>' +
+      '<span class="tower-card-image-frame">' +
+        '<span class="tower-card-fallback">' + escapeHTML(enemy.name) + '</span>' +
+        '<img src="' + imageURL(enemy.card) + '" alt="' + escapeHTML(enemy.name) + '" loading="lazy" onload="this.previousElementSibling.hidden=true" onerror="this.hidden=true">' +
+        '<span class="tower-generated-stats">' +
+          '<span>HP <b>' + formatNumber(enemy.hp) + '</b></span>' +
+          '<span>ATK <b>' + formatNumber(enemy.atk) + '</b></span>' +
+        '</span>' +
+      '</span>' +
+      '<h3>' + escapeHTML(enemy.name) + '</h3>' +
+      '<p class="tower-card-subline"><span>' + escapeHTML(source) + '</span><span>' + escapeHTML(role.charAt(0).toUpperCase() + role.slice(1)) + '</span></p>' +
+      '<p class="tower-card-statline"><span>HP <b>' + formatNumber(enemy.hp) + '</b></span><span>ATK <b>' + formatNumber(enemy.atk) + '</b></span></p>' +
       '</article>';
   }).join("");
   els.towerResult.hidden = false;
