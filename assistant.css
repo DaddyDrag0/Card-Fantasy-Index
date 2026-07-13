@@ -119,3 +119,18 @@
   .tower-enemy-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .tower-generated-stats{font-size:10px}
 }
+
+
+/* Compact generated cards: one stat display per card */
+.tower-enemy-grid{grid-template-columns:repeat(4,minmax(0,205px));justify-content:start;align-items:start}
+.tower-enemy-card{width:100%;max-width:205px}
+.tower-card-subline{margin-bottom:7px}
+.tower-card-statline{display:none!important}
+.tower-result-heading{justify-content:flex-start}
+@media(max-width:1050px){
+  .tower-enemy-grid{grid-template-columns:repeat(auto-fill,minmax(165px,205px))}
+}
+@media(max-width:520px){
+  .tower-enemy-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .tower-enemy-card{max-width:none}
+}
