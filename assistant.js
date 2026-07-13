@@ -86,8 +86,6 @@ const els = {
   towerResult: document.querySelector("#towerResult"),
   towerEnemyGrid: document.querySelector("#towerEnemyGrid"),
   towerResultFloor: document.querySelector("#towerResultFloor"),
-  towerEnemyHP: document.querySelector("#towerEnemyHP"),
-  towerEnemyATK: document.querySelector("#towerEnemyATK"),
   towerError: document.querySelector("#towerError")
 };
 
@@ -302,8 +300,6 @@ function renderTowerResult() {
 
   const first = encounter.enemies[0];
   els.towerResultFloor.textContent = "Floor " + formatNumber(encounter.floor);
-  els.towerEnemyHP.textContent = formatNumber(first.hp);
-  els.towerEnemyATK.textContent = formatNumber(first.atk);
   els.towerEnemyGrid.innerHTML = encounter.enemies.map(function (enemy, index) {
     const source = enemy.card.weather || "Base";
     const role = cardRole(enemy.card);
@@ -319,7 +315,6 @@ function renderTowerResult() {
       '</span>' +
       '<h3>' + escapeHTML(enemy.name) + '</h3>' +
       '<p class="tower-card-subline"><span>' + escapeHTML(source) + '</span><span>' + escapeHTML(role.charAt(0).toUpperCase() + role.slice(1)) + '</span></p>' +
-      '<p class="tower-card-statline"><span>HP <b>' + formatNumber(enemy.hp) + '</b></span><span>ATK <b>' + formatNumber(enemy.atk) + '</b></span></p>' +
       '</article>';
   }).join("");
   els.towerResult.hidden = false;
