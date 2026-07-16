@@ -84,6 +84,7 @@ const els = {
   removeCopyButton: document.querySelector("#removeCopyButton"),
   addCopyButton: document.querySelector("#addCopyButton"),
   teamButton: document.querySelector("#teamButton"),
+  removeTeamButton: document.querySelector("#removeTeamButton"),
   scanModal: document.querySelector("#scanModal"),
   scanClose: document.querySelector("#scanClose"),
   scanCancel: document.querySelector("#scanCancel"),
@@ -248,6 +249,12 @@ function variantLabel(names = state.selectedBorders) {
   return ordered.length ? ordered.join(" + ") : "Base";
 }
 
+function variantCode(names = state.selectedBorders) {
+  const codes = { Shiny: "S", Diamond: "D", Radiant: "R" };
+  const ordered = canonicalBorderNames(names);
+  return ordered.length ? ordered.map((name) => codes[name]).join("") : "Base";
+}
+
 function ownedCount(id) {
   return Math.max(0, Number(state.collection[id] || 0));
 }
@@ -256,6 +263,28 @@ function variantOwnedCount(id, names = state.selectedBorders) {
   const variants = state.collectionVariants[id];
   if (!variants || typeof variants !== "object") return 0;
   return Math.max(0, Number(variants[variantKey(names)] || 0));
+}
+
+function exactTeamCount(id, names = state.selectedBorders) {
+  const key = variantKey(names);
+  return state.teamVariants.filter((entry) => entry.id === id && variantKey(entry.borders) === key).length;
+}
+
+function sanitizeTeamVariants(entries = state.teamVariants) {
+  const used = {};
+  return entries.filter((entry) => {
+    const key = `${entry.id}::${variantKey(entry.borders)}`;
+    const nextCount = (used[key] || 0) + 1;
+    if (nextCount > variantOwnedCount(entry.id, entry.borders)) return false;
+    used[key] = nextCount;
+    return true;
+  }).slice(0, MAX_TEAM_SIZE);
+}
+
+function shouldHighlightTile(id) {
+  if (!state.selectedBorders.size) return false;
+  const isOpenCard = !els.cardModal.hidden && state.selectedId === id;
+  return isOpenCard || variantOwnedCount(id) > 0;
 }
 
 function rebuildCollectionTotals() {
@@ -352,8 +381,9 @@ function cardHTML(card) {
   const stats = statsForCard(card);
   const owned = variantOwnedCount(card.id);
   const accent = accentForCard(card);
+  const showVariantBorder = shouldHighlightTile(card.id);
   return `
-    <button class="card-tile ${state.selectedBorders.size ? "has-modifiers" : ""}" type="button" data-card-id="${escapeHTML(card.id)}" style="--accent:${accent};${borderVisualStyle()}">
+    <button class="card-tile ${showVariantBorder ? "has-modifiers" : ""}" type="button" data-card-id="${escapeHTML(card.id)}" style="--accent:${accent};${showVariantBorder ? borderVisualStyle() : ""}">
       <span class="card-image-frame">
         <span class="card-fallback">${escapeHTML(card.name)}</span>
         <img src="${imageURL(card)}" alt="${escapeHTML(card.name)}" loading="lazy" decoding="async" onload="this.previousElementSibling.hidden=true" onerror="this.hidden=true">
@@ -432,8 +462,8 @@ function renderTeam() {
     slots.push(`
       <div class="team-slot ${borders.length ? "has-modifiers" : ""}" data-team-id="${escapeHTML(card.id)}" style="${borderVisualStyle(borders)}">
         <img src="${imageURL(card)}" alt="" onerror="this.style.visibility='hidden'">
-        <span><strong>${escapeHTML(card.name)}</strong><small>${escapeHTML(variantLabel(borders))} · ${formatNumber(stats.hp)} HP · ${formatNumber(stats.atk)} ATK</small></span>
-        <button class="team-remove" type="button" data-team-remove-index="${index}" aria-label="Remove ${escapeHTML(variantLabel(borders))} ${escapeHTML(card.name)}">×</button>
+        <span><strong>${escapeHTML(card.name)}</strong><small>${escapeHTML(variantCode(borders))} · ${formatNumber(stats.hp)} HP · ${formatNumber(stats.atk)} ATK</small></span>
+        <button class="team-remove" type="button" data-team-remove-index="${index}" aria-label="Remove ${escapeHTML(variantCode(borders))} ${escapeHTML(card.name)}">×</button>
       </div>
     `);
   }
@@ -455,9 +485,7 @@ function renderModal() {
   const stats = statsForCard(card, new Set(selectedNames));
   const owned = ownedCount(card.id);
   const ownedVariant = variantOwnedCount(card.id, selectedNames);
-  const teamEntryIndex = state.teamVariants.findIndex((entry) => entry.id === card.id);
-  const teamEntry = teamEntryIndex >= 0 ? state.teamVariants[teamEntryIndex] : null;
-  const inTeamExact = Boolean(teamEntry && variantKey(teamEntry.borders) === variantKey(selectedNames));
+  const teamCopies = exactTeamCount(card.id, selectedNames);
 
   els.modalSource.textContent = sourceName(card);
   els.modalName.textContent = card.name;
@@ -488,13 +516,13 @@ function renderModal() {
   }).join("");
 
   els.removeCopyButton.disabled = ownedVariant <= 0;
-  els.teamButton.textContent = inTeamExact
-    ? "Remove from team"
-    : teamEntry
-      ? `Use ${variantLabel(selectedNames)} in team`
-      : "Add to team";
-  els.teamButton.classList.toggle("is-active", inTeamExact);
-  els.teamButton.disabled = !inTeamExact && (ownedVariant <= 0 || (!teamEntry && state.teamVariants.length >= MAX_TEAM_SIZE));
+  els.removeTeamButton.disabled = teamCopies <= 0;
+  els.removeTeamButton.textContent = teamCopies > 0
+    ? `− ${variantCode(selectedNames)} team copy (${teamCopies})`
+    : "− Team copy";
+  els.teamButton.textContent = `+ ${variantCode(selectedNames)} team copy`;
+  els.teamButton.classList.toggle("is-active", teamCopies > 0);
+  els.teamButton.disabled = ownedVariant <= teamCopies || state.teamVariants.length >= MAX_TEAM_SIZE;
 
   applyBorderHighlight(els.modalDialog);
   applyBorderHighlight(els.modalImageWrap);
@@ -502,14 +530,18 @@ function renderModal() {
 
 function openModal(id) {
   state.selectedId = id;
-  renderModal();
   els.cardModal.hidden = false;
   document.body.style.overflow = "hidden";
+  renderModal();
+  updateTile(id);
 }
 
 function closeModal() {
+  const previousId = state.selectedId;
   els.cardModal.hidden = true;
+  state.selectedId = null;
   document.body.style.overflow = "";
+  if (previousId) updateTile(previousId);
 }
 
 function updateTile(id) {
@@ -519,6 +551,7 @@ function updateTile(id) {
   const owned = variantOwnedCount(id);
   badge.textContent = owned;
   badge.hidden = owned <= 0;
+  applyBorderHighlight(tile, shouldHighlightTile(id) ? state.selectedBorders : []);
 }
 
 function updateVisibleStats() {
@@ -536,7 +569,7 @@ function updateVisibleStats() {
       badge.textContent = ownedVariant;
       badge.hidden = ownedVariant <= 0;
     }
-    applyBorderHighlight(tile);
+    applyBorderHighlight(tile, shouldHighlightTile(card.id) ? state.selectedBorders : []);
   });
 }
 
@@ -550,9 +583,13 @@ function changeOwned(id, amount) {
   if (!Object.keys(state.collectionVariants[id]).length) delete state.collectionVariants[id];
 
   rebuildCollectionTotals();
-  if (next === 0) {
-    state.teamVariants = state.teamVariants.filter((entry) => !(entry.id === id && variantKey(entry.borders) === key));
-  }
+  let remainingCopies = next;
+  state.teamVariants = state.teamVariants.filter((entry) => {
+    if (entry.id !== id || variantKey(entry.borders) !== key) return true;
+    if (remainingCopies <= 0) return false;
+    remainingCopies -= 1;
+    return true;
+  });
   saveState();
   updateCollectionSummary();
   updateTile(id);
@@ -571,36 +608,48 @@ function toggleBorder(borderName) {
   if (!els.cardModal.hidden) renderModal();
 }
 
-function toggleTeam(id) {
+function addTeamVariant(id) {
   const borders = selectedBorderNames();
-  const key = variantKey(borders);
-  const index = state.teamVariants.findIndex((entry) => entry.id === id);
-  const exact = index >= 0 && variantKey(state.teamVariants[index].borders) === key;
+  const ownedCopies = variantOwnedCount(id, borders);
+  const teamCopies = exactTeamCount(id, borders);
 
-  if (exact) {
-    state.teamVariants.splice(index, 1);
-    showToast("Removed from team");
-  } else {
-    if (variantOwnedCount(id, borders) <= 0) {
-      showToast(`Add a ${variantLabel(borders)} copy first`);
-      return;
-    }
-    const entry = { id, borders: canonicalBorderNames(borders) };
-    if (index >= 0) {
-      state.teamVariants[index] = entry;
-      showToast(`Team card changed to ${variantLabel(borders)}`);
-    } else {
-      if (state.teamVariants.length >= MAX_TEAM_SIZE) {
-        showToast("Your team is full");
-        return;
-      }
-      state.teamVariants.push(entry);
-      showToast(`Added ${variantLabel(borders)} card to team`);
-    }
+  if (ownedCopies <= teamCopies) {
+    showToast(`Add another ${variantCode(borders)} copy first`);
+    return;
   }
+  if (state.teamVariants.length >= MAX_TEAM_SIZE) {
+    showToast("Your team is full");
+    return;
+  }
+
+  state.teamVariants.push({ id, borders: canonicalBorderNames(borders) });
   saveState();
   renderTeam();
   renderModal();
+  showToast(`Added ${variantCode(borders)} card to team`);
+}
+
+function removeTeamVariant(id) {
+  const key = variantKey(selectedBorderNames());
+  let index = -1;
+  for (let position = state.teamVariants.length - 1; position >= 0; position -= 1) {
+    const entry = state.teamVariants[position];
+    if (entry.id === id && variantKey(entry.borders) === key) {
+      index = position;
+      break;
+    }
+  }
+
+  if (index < 0) {
+    showToast("That card variant is not in the team");
+    return;
+  }
+
+  state.teamVariants.splice(index, 1);
+  saveState();
+  renderTeam();
+  renderModal();
+  showToast("Removed one team copy");
 }
 
 let toastTimer;
@@ -1208,7 +1257,7 @@ function applyScanResults(mode) {
   }
 
   rebuildCollectionTotals();
-  state.teamVariants = state.teamVariants.filter((entry) => variantOwnedCount(entry.id, entry.borders) > 0);
+  state.teamVariants = sanitizeTeamVariants(state.teamVariants);
   saveState();
   updateCollectionSummary();
   renderTeam();
@@ -1270,10 +1319,9 @@ async function importCollection(file) {
         ? parsed.team.map((id) => ({ id, borders: [] }))
         : [];
 
-    state.teamVariants = importedTeamVariants
+    state.teamVariants = sanitizeTeamVariants(importedTeamVariants
       .map((entry) => ({ id: String(entry?.id || ""), borders: canonicalBorderNames(entry?.borders || []) }))
-      .filter((entry) => cardIds.has(entry.id) && variantOwnedCount(entry.id, entry.borders) > 0)
-      .slice(0, MAX_TEAM_SIZE);
+      .filter((entry) => cardIds.has(entry.id)));
 
     saveState();
     updateCollectionSummary();
@@ -1357,7 +1405,11 @@ function bindEvents() {
 
   els.teamButton.addEventListener("click", () => {
     const card = selectedCard();
-    if (card) toggleTeam(card.id);
+    if (card) addTeamVariant(card.id);
+  });
+  els.removeTeamButton.addEventListener("click", () => {
+    const card = selectedCard();
+    if (card) removeTeamVariant(card.id);
   });
 
   els.teamList.addEventListener("click", (event) => {
@@ -1440,7 +1492,7 @@ async function init() {
   bindEvents();
   try {
     await loadCards();
-    state.teamVariants = state.teamVariants.filter((entry) => state.cards.some((card) => card.id === entry.id) && variantOwnedCount(entry.id, entry.borders) > 0).slice(0, MAX_TEAM_SIZE);
+    state.teamVariants = sanitizeTeamVariants(state.teamVariants.filter((entry) => state.cards.some((card) => card.id === entry.id)));
     syncLegacyTeam();
     renderBorderControls();
     renderFilters();
