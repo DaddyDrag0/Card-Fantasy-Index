@@ -5,6 +5,7 @@ const CARD_PARTS = Array.from({ length: 7 }, (_, index) => `data/cards-${index +
 const STORAGE_KEY = "cf-deck-builder-state-v1";
 const LEGACY_STORAGE_KEY = "card-fantasy-index-state-v1";
 const MAX_TEAM_SIZE = 4;
+const BORDER_ORDER = ["Shiny", "Diamond", "Radiant"];
 const SUPPORT_CARD_IDS = new Set([
   "peasant", "druid", "pixie", "paladin-guardian", "spirit-caller", "life-tree",
   "sand-wraith", "soul-warden", "arcane-construct", "storm-dragon", "death-tree",
@@ -37,7 +38,9 @@ const state = {
   ownedOnly: false,
   selectedId: null,
   collection: {},
+  collectionVariants: {},
   team: [],
+  teamVariants: [],
   scanResults: []
 };
 
@@ -225,14 +228,56 @@ function statsForCard(card, borders = state.selectedBorders) {
   };
 }
 
+function canonicalBorderNames(names = state.selectedBorders) {
+  const selected = new Set(Array.from(names || []));
+  return BORDER_ORDER.filter((name) => selected.has(name));
+}
+
+function variantKey(names = state.selectedBorders) {
+  const ordered = canonicalBorderNames(names);
+  return ordered.length ? ordered.join("+") : "Base";
+}
+
+function bordersFromVariantKey(key) {
+  if (!key || key === "Base") return [];
+  return canonicalBorderNames(String(key).split("+"));
+}
+
+function variantLabel(names = state.selectedBorders) {
+  const ordered = canonicalBorderNames(names);
+  return ordered.length ? ordered.join(" + ") : "Base";
+}
+
 function ownedCount(id) {
   return Math.max(0, Number(state.collection[id] || 0));
 }
 
+function variantOwnedCount(id, names = state.selectedBorders) {
+  const variants = state.collectionVariants[id];
+  if (!variants || typeof variants !== "object") return 0;
+  return Math.max(0, Number(variants[variantKey(names)] || 0));
+}
+
+function rebuildCollectionTotals() {
+  const totals = {};
+  for (const [id, variants] of Object.entries(state.collectionVariants)) {
+    const total = Object.values(variants || {}).reduce((sum, count) => sum + Math.max(0, Math.floor(Number(count) || 0)), 0);
+    if (total > 0) totals[id] = total;
+  }
+  state.collection = totals;
+}
+
+function syncLegacyTeam() {
+  state.team = state.teamVariants.map((entry) => entry.id);
+}
+
 function saveState() {
+  syncLegacyTeam();
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
     collection: state.collection,
+    collectionVariants: state.collectionVariants,
     team: state.team,
+    teamVariants: state.teamVariants,
     selectedBorders: selectedBorderNames(),
     cardSize: Number(els.sizeRange.value || 190)
   }));
@@ -241,8 +286,28 @@ function saveState() {
 function loadSavedState() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY) || "{}");
-    if (saved.collection && typeof saved.collection === "object") state.collection = saved.collection;
-    if (Array.isArray(saved.team)) state.team = saved.team.slice(0, MAX_TEAM_SIZE);
+    if (saved.collectionVariants && typeof saved.collectionVariants === "object") {
+      state.collectionVariants = saved.collectionVariants;
+      rebuildCollectionTotals();
+    } else if (saved.collection && typeof saved.collection === "object") {
+      state.collection = saved.collection;
+      state.collectionVariants = {};
+      for (const [id, count] of Object.entries(saved.collection)) {
+        const cleanCount = Math.max(0, Math.floor(Number(count) || 0));
+        if (cleanCount > 0) state.collectionVariants[id] = { Base: cleanCount };
+      }
+    }
+
+    if (Array.isArray(saved.teamVariants)) {
+      state.teamVariants = saved.teamVariants.slice(0, MAX_TEAM_SIZE).map((entry) => ({
+        id: String(entry?.id || ""),
+        borders: canonicalBorderNames(entry?.borders || [])
+      }));
+    } else if (Array.isArray(saved.team)) {
+      state.teamVariants = saved.team.slice(0, MAX_TEAM_SIZE).map((id) => ({ id: String(id), borders: [] }));
+    }
+    syncLegacyTeam();
+
     if (Array.isArray(saved.selectedBorders)) {
       state.selectedBorders = new Set(saved.selectedBorders);
     } else if (typeof saved.border === "string" && saved.border !== "Base") {
@@ -285,7 +350,7 @@ function getVisibleCards() {
 
 function cardHTML(card) {
   const stats = statsForCard(card);
-  const owned = ownedCount(card.id);
+  const owned = variantOwnedCount(card.id);
   const accent = accentForCard(card);
   return `
     <button class="card-tile ${state.selectedBorders.size ? "has-modifiers" : ""}" type="button" data-card-id="${escapeHTML(card.id)}" style="--accent:${accent};${borderVisualStyle()}">
@@ -354,26 +419,27 @@ function renderTeam() {
   let totalATK = 0;
 
   for (let index = 0; index < MAX_TEAM_SIZE; index += 1) {
-    const id = state.team[index];
-    const card = teamCard(id);
+    const entry = state.teamVariants[index];
+    const card = entry ? teamCard(entry.id) : null;
     if (!card) {
       slots.push(`<div class="team-slot is-empty">Empty slot</div>`);
       continue;
     }
-    const stats = statsForCard(card);
+    const borders = canonicalBorderNames(entry.borders);
+    const stats = statsForCard(card, new Set(borders));
     totalHP += stats.hp;
     totalATK += stats.atk;
     slots.push(`
-      <div class="team-slot ${state.selectedBorders.size ? "has-modifiers" : ""}" data-team-id="${escapeHTML(card.id)}" style="${borderVisualStyle()}">
+      <div class="team-slot ${borders.length ? "has-modifiers" : ""}" data-team-id="${escapeHTML(card.id)}" style="${borderVisualStyle(borders)}">
         <img src="${imageURL(card)}" alt="" onerror="this.style.visibility='hidden'">
-        <span><strong>${escapeHTML(card.name)}</strong><small>${formatNumber(stats.hp)} HP · ${formatNumber(stats.atk)} ATK</small></span>
-        <button class="team-remove" type="button" data-team-remove="${escapeHTML(card.id)}" aria-label="Remove ${escapeHTML(card.name)}">×</button>
+        <span><strong>${escapeHTML(card.name)}</strong><small>${escapeHTML(variantLabel(borders))} · ${formatNumber(stats.hp)} HP · ${formatNumber(stats.atk)} ATK</small></span>
+        <button class="team-remove" type="button" data-team-remove-index="${index}" aria-label="Remove ${escapeHTML(variantLabel(borders))} ${escapeHTML(card.name)}">×</button>
       </div>
     `);
   }
 
   els.teamList.innerHTML = slots.join("");
-  els.teamCount.textContent = `${state.team.length}/${MAX_TEAM_SIZE}`;
+  els.teamCount.textContent = `${state.teamVariants.length}/${MAX_TEAM_SIZE}`;
   els.teamHP.textContent = formatNumber(totalHP);
   els.teamATK.textContent = formatNumber(totalATK);
 }
@@ -385,10 +451,13 @@ function selectedCard() {
 function renderModal() {
   const card = selectedCard();
   if (!card) return;
-  const stats = statsForCard(card);
-  const owned = ownedCount(card.id);
-  const inTeam = state.team.includes(card.id);
   const selectedNames = selectedBorderNames();
+  const stats = statsForCard(card, new Set(selectedNames));
+  const owned = ownedCount(card.id);
+  const ownedVariant = variantOwnedCount(card.id, selectedNames);
+  const teamEntryIndex = state.teamVariants.findIndex((entry) => entry.id === card.id);
+  const teamEntry = teamEntryIndex >= 0 ? state.teamVariants[teamEntryIndex] : null;
+  const inTeamExact = Boolean(teamEntry && variantKey(teamEntry.borders) === variantKey(selectedNames));
 
   els.modalSource.textContent = sourceName(card);
   els.modalName.textContent = card.name;
@@ -396,7 +465,7 @@ function renderModal() {
   els.modalHP.textContent = formatNumber(stats.hp);
   els.modalATK.textContent = formatNumber(stats.atk);
   els.modalOdds.textContent = formatOdds(stats.odds);
-  els.modalOwned.textContent = formatNumber(owned);
+  els.modalOwned.textContent = `${formatNumber(ownedVariant)} ${variantLabel(selectedNames)} · ${formatNumber(owned)} total`;
   els.modalTags.innerHTML = [
     titleCase(card.ability || card.abilityType || "No ability"),
     card.source || sourceName(card),
@@ -418,10 +487,14 @@ function renderModal() {
     return `<button class="modifier-button ${active ? "is-active" : ""}" type="button" data-modal-border="${escapeHTML(border.name)}" style="--chip-color:${escapeHTML(border.color || "#8d4dff")}"><span>${escapeHTML(border.name)}</span><small>${escapeHTML(border.chanceLabel || "")}</small></button>`;
   }).join("");
 
-  els.removeCopyButton.disabled = owned <= 0;
-  els.teamButton.textContent = inTeam ? "Remove from team" : "Add to team";
-  els.teamButton.classList.toggle("is-active", inTeam);
-  els.teamButton.disabled = !inTeam && (owned <= 0 || state.team.length >= MAX_TEAM_SIZE);
+  els.removeCopyButton.disabled = ownedVariant <= 0;
+  els.teamButton.textContent = inTeamExact
+    ? "Remove from team"
+    : teamEntry
+      ? `Use ${variantLabel(selectedNames)} in team`
+      : "Add to team";
+  els.teamButton.classList.toggle("is-active", inTeamExact);
+  els.teamButton.disabled = !inTeamExact && (ownedVariant <= 0 || (!teamEntry && state.teamVariants.length >= MAX_TEAM_SIZE));
 
   applyBorderHighlight(els.modalDialog);
   applyBorderHighlight(els.modalImageWrap);
@@ -443,7 +516,7 @@ function updateTile(id) {
   const tile = els.cardGrid.querySelector(`[data-card-id="${CSS.escape(id)}"]`);
   if (!tile) return;
   const badge = tile.querySelector("[data-owned-badge]");
-  const owned = ownedCount(id);
+  const owned = variantOwnedCount(id);
   badge.textContent = owned;
   badge.hidden = owned <= 0;
 }
@@ -457,23 +530,35 @@ function updateVisibleStats() {
     const atk = tile.querySelector("[data-card-atk]");
     if (hp) hp.textContent = formatNumber(stats.hp);
     if (atk) atk.textContent = formatNumber(stats.atk);
+    const badge = tile.querySelector("[data-owned-badge]");
+    const ownedVariant = variantOwnedCount(card.id);
+    if (badge) {
+      badge.textContent = ownedVariant;
+      badge.hidden = ownedVariant <= 0;
+    }
     applyBorderHighlight(tile);
   });
 }
 
 function changeOwned(id, amount) {
-  const current = ownedCount(id);
+  const key = variantKey();
+  const current = variantOwnedCount(id);
   const next = Math.max(0, current + amount);
-  if (next > 0) state.collection[id] = next;
-  else delete state.collection[id];
+  if (!state.collectionVariants[id]) state.collectionVariants[id] = {};
+  if (next > 0) state.collectionVariants[id][key] = next;
+  else delete state.collectionVariants[id][key];
+  if (!Object.keys(state.collectionVariants[id]).length) delete state.collectionVariants[id];
 
-  if (next === 0) state.team = state.team.filter((teamId) => teamId !== id);
+  rebuildCollectionTotals();
+  if (next === 0) {
+    state.teamVariants = state.teamVariants.filter((entry) => !(entry.id === id && variantKey(entry.borders) === key));
+  }
   saveState();
   updateCollectionSummary();
   updateTile(id);
   renderTeam();
   renderModal();
-  if (state.ownedOnly && next === 0) renderGrid();
+  if (state.ownedOnly && ownedCount(id) === 0) renderGrid();
 }
 
 function toggleBorder(borderName) {
@@ -487,21 +572,31 @@ function toggleBorder(borderName) {
 }
 
 function toggleTeam(id) {
-  const index = state.team.indexOf(id);
-  if (index >= 0) {
-    state.team.splice(index, 1);
+  const borders = selectedBorderNames();
+  const key = variantKey(borders);
+  const index = state.teamVariants.findIndex((entry) => entry.id === id);
+  const exact = index >= 0 && variantKey(state.teamVariants[index].borders) === key;
+
+  if (exact) {
+    state.teamVariants.splice(index, 1);
     showToast("Removed from team");
   } else {
-    if (ownedCount(id) <= 0) {
-      showToast("Add a copy to your collection first");
+    if (variantOwnedCount(id, borders) <= 0) {
+      showToast(`Add a ${variantLabel(borders)} copy first`);
       return;
     }
-    if (state.team.length >= MAX_TEAM_SIZE) {
-      showToast("Your team is full");
-      return;
+    const entry = { id, borders: canonicalBorderNames(borders) };
+    if (index >= 0) {
+      state.teamVariants[index] = entry;
+      showToast(`Team card changed to ${variantLabel(borders)}`);
+    } else {
+      if (state.teamVariants.length >= MAX_TEAM_SIZE) {
+        showToast("Your team is full");
+        return;
+      }
+      state.teamVariants.push(entry);
+      showToast(`Added ${variantLabel(borders)} card to team`);
     }
-    state.team.push(id);
-    showToast("Added to team");
   }
   saveState();
   renderTeam();
@@ -1094,31 +1189,43 @@ function closeScanModal() {
 }
 
 function applyScanResults(mode) {
-  const imported = {};
+  const importedVariants = {};
   for (const result of state.scanResults) {
-    imported[result.cardId] = (imported[result.cardId] || 0) + Math.max(1, Number(result.quantity) || 1);
+    const id = result.cardId;
+    const key = variantKey(result.detectedBorders || []);
+    if (!importedVariants[id]) importedVariants[id] = {};
+    importedVariants[id][key] = (importedVariants[id][key] || 0) + Math.max(1, Number(result.quantity) || 1);
   }
-  if (mode === "replace") state.collection = imported;
-  else {
-    for (const [id, quantity] of Object.entries(imported)) {
-      state.collection[id] = ownedCount(id) + quantity;
+
+  if (mode === "replace") state.collectionVariants = {};
+  for (const [id, variants] of Object.entries(importedVariants)) {
+    if (!state.collectionVariants[id]) state.collectionVariants[id] = {};
+    for (const [key, quantity] of Object.entries(variants)) {
+      state.collectionVariants[id][key] = mode === "replace"
+        ? quantity
+        : Math.max(0, Number(state.collectionVariants[id][key] || 0)) + quantity;
     }
   }
-  state.team = state.team.filter((id) => ownedCount(id) > 0);
+
+  rebuildCollectionTotals();
+  state.teamVariants = state.teamVariants.filter((entry) => variantOwnedCount(entry.id, entry.borders) > 0);
   saveState();
   updateCollectionSummary();
   renderTeam();
   renderGrid();
   closeScanModal();
-  showToast(`${Object.keys(imported).length} cards imported from screenshot`);
+  showToast(`${Object.keys(importedVariants).length} cards imported from screenshot`);
 }
 
 function exportCollection() {
+  syncLegacyTeam();
   const data = {
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     collection: state.collection,
-    team: state.team
+    collectionVariants: state.collectionVariants,
+    team: state.team,
+    teamVariants: state.teamVariants
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -1132,21 +1239,47 @@ function exportCollection() {
 async function importCollection(file) {
   try {
     const parsed = JSON.parse(await file.text());
-    const importedCollection = parsed.collection && typeof parsed.collection === "object" ? parsed.collection : parsed;
-    const cleanCollection = {};
-    for (const card of state.cards) {
-      const count = Math.max(0, Number(importedCollection[card.id] || 0));
-      if (count > 0) cleanCollection[card.id] = Math.floor(count);
+    const cardIds = new Set(state.cards.map((card) => card.id));
+    const cleanVariants = {};
+
+    if (parsed.collectionVariants && typeof parsed.collectionVariants === "object") {
+      for (const [id, variants] of Object.entries(parsed.collectionVariants)) {
+        if (!cardIds.has(id) || !variants || typeof variants !== "object") continue;
+        for (const [key, count] of Object.entries(variants)) {
+          const cleanCount = Math.max(0, Math.floor(Number(count) || 0));
+          if (!cleanCount) continue;
+          const cleanKey = variantKey(bordersFromVariantKey(key));
+          if (!cleanVariants[id]) cleanVariants[id] = {};
+          cleanVariants[id][cleanKey] = (cleanVariants[id][cleanKey] || 0) + cleanCount;
+        }
+      }
+    } else {
+      const importedCollection = parsed.collection && typeof parsed.collection === "object" ? parsed.collection : parsed;
+      for (const id of cardIds) {
+        const count = Math.max(0, Math.floor(Number(importedCollection[id] || 0)));
+        if (count > 0) cleanVariants[id] = { Base: count };
+      }
     }
-    state.collection = cleanCollection;
-    state.team = Array.isArray(parsed.team)
-      ? parsed.team.filter((id) => cleanCollection[id] > 0 && state.cards.some((card) => card.id === id)).slice(0, MAX_TEAM_SIZE)
-      : [];
+
+    state.collectionVariants = cleanVariants;
+    rebuildCollectionTotals();
+
+    const importedTeamVariants = Array.isArray(parsed.teamVariants)
+      ? parsed.teamVariants
+      : Array.isArray(parsed.team)
+        ? parsed.team.map((id) => ({ id, borders: [] }))
+        : [];
+
+    state.teamVariants = importedTeamVariants
+      .map((entry) => ({ id: String(entry?.id || ""), borders: canonicalBorderNames(entry?.borders || []) }))
+      .filter((entry) => cardIds.has(entry.id) && variantOwnedCount(entry.id, entry.borders) > 0)
+      .slice(0, MAX_TEAM_SIZE);
+
     saveState();
     updateCollectionSummary();
     renderTeam();
     renderGrid();
-    showToast("Collection imported");
+    showToast("Collection imported with card variants");
   } catch (error) {
     console.error(error);
     showToast("That collection file could not be imported");
@@ -1228,9 +1361,10 @@ function bindEvents() {
   });
 
   els.teamList.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-team-remove]");
+    const button = event.target.closest("[data-team-remove-index]");
     if (!button) return;
-    state.team = state.team.filter((id) => id !== button.dataset.teamRemove);
+    const index = Number(button.dataset.teamRemoveIndex);
+    if (Number.isInteger(index)) state.teamVariants.splice(index, 1);
     saveState();
     renderTeam();
     if (!els.cardModal.hidden) renderModal();
@@ -1262,7 +1396,9 @@ function bindEvents() {
   els.clearCollectionButton.addEventListener("click", () => {
     if (!confirm("Clear your entire saved collection and team?")) return;
     state.collection = {};
+    state.collectionVariants = {};
     state.team = [];
+    state.teamVariants = [];
     saveState();
     updateCollectionSummary();
     renderTeam();
@@ -1304,7 +1440,8 @@ async function init() {
   bindEvents();
   try {
     await loadCards();
-    state.team = state.team.filter((id) => state.cards.some((card) => card.id === id) && ownedCount(id) > 0).slice(0, MAX_TEAM_SIZE);
+    state.teamVariants = state.teamVariants.filter((entry) => state.cards.some((card) => card.id === entry.id) && variantOwnedCount(entry.id, entry.borders) > 0).slice(0, MAX_TEAM_SIZE);
+    syncLegacyTeam();
     renderBorderControls();
     renderFilters();
     updateCollectionSummary();
