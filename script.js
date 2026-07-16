@@ -709,22 +709,82 @@ function embeddingSimilarity(left, right) {
   return total;
 }
 
-function matchCardByImage(embedding, references) {
-  const ranking = references
-    .map((reference) => ({
+function borderCombinationDifference(left, right) {
+  const leftSet = new Set(canonicalBorderNames(left));
+  const rightSet = new Set(canonicalBorderNames(right));
+  let difference = 0;
+  for (const name of BORDER_ORDER) {
+    if (leftSet.has(name) !== rightSet.has(name)) difference += 1;
+  }
+  return difference;
+}
+
+function matchCardByImage(embedding, references, recognition, detectedBorders) {
+  const hasOdds = Number(recognition?.odds) > 0;
+  const combinations = allBorderCombinations();
+  const ranking = references.map((reference) => {
+    const similarity = embeddingSimilarity(embedding, reference.embedding);
+    let oddsError = Infinity;
+    let borderDifference = 0;
+    let combination = { names: [], multiplier: 1 };
+
+    if (hasOdds) {
+      const candidates = combinations.map((candidate) => {
+        const expectedOdds = Math.max(1, Number(reference.card.odds || 1) * candidate.multiplier);
+        const error = Math.abs(Math.log(expectedOdds / Math.max(1, recognition.odds)));
+        const difference = detectedBorders.length
+          ? borderCombinationDifference(candidate.names, detectedBorders)
+          : 0;
+        return {
+          combination: candidate,
+          error,
+          difference,
+          score: error + difference * 0.08
+        };
+      }).sort((left, right) => left.score - right.score);
+      const bestOdds = candidates[0];
+      oddsError = bestOdds.error;
+      borderDifference = bestOdds.difference;
+      combination = bestOdds.combination;
+    }
+
+    const oddsStrength = hasOdds ? Math.exp(-oddsError * 12) : 0;
+    const combinedScore = similarity + oddsStrength * 1.35 - borderDifference * 0.16;
+    return {
       card: reference.card,
-      similarity: embeddingSimilarity(embedding, reference.embedding)
-    }))
-    .sort((left, right) => right.similarity - left.similarity);
+      similarity,
+      oddsError,
+      borderDifference,
+      combination,
+      combinedScore
+    };
+  }).sort((left, right) => right.combinedScore - left.combinedScore);
+
   const best = ranking[0];
-  const second = ranking[1] || { similarity: best.similarity - 0.08 };
-  const absoluteScore = Math.max(0, Math.min(1, (best.similarity - 0.42) / 0.48));
-  const separationScore = Math.max(0, Math.min(1, (best.similarity - second.similarity) / 0.08));
-  const confidence = Math.round(Math.max(10, Math.min(90, 10 + absoluteScore * 50 + separationScore * 30)));
+  const second = ranking[1] || { combinedScore: best.combinedScore - 0.08 };
+  const separation = Math.max(0, best.combinedScore - second.combinedScore);
+  const exactOdds = hasOdds && best.oddsError < 0.018;
+  const matchingBorder = !detectedBorders.length || best.borderDifference === 0;
+  let confidence;
+
+  if (exactOdds) {
+    confidence = 72 + Math.min(15, separation * 120) + (matchingBorder ? 8 : 0);
+  } else if (hasOdds) {
+    confidence = 35 + Math.min(25, separation * 100) + Math.max(0, 20 - best.oddsError * 30);
+  } else {
+    const visualGap = Math.max(0, best.similarity - (ranking[1]?.similarity || best.similarity - 0.04));
+    confidence = 18 + Math.min(50, visualGap * 220);
+  }
+
   return {
     card: best.card,
-    confidence,
-    method: "Neural image resemblance",
+    confidence: Math.round(Math.max(10, Math.min(96, confidence))),
+    method: exactOdds
+      ? "Artwork + exact odds + border"
+      : hasOdds
+        ? "Artwork + closest odds"
+        : "Artwork only — verify match",
+    combination: best.combination.names,
     alternatives: ranking.slice(1, 4).map((candidate) => candidate.card.name)
   };
 }
@@ -751,10 +811,10 @@ async function getOCRWorker() {
 }
 
 function createOddsCanvas(image, cell, binary = false) {
-  const sx = cell.x + cell.width * 0.11;
-  const sy = cell.y + cell.height * 0.72;
-  const sw = cell.width * 0.86;
-  const sh = cell.height * 0.25;
+  const sx = cell.x + cell.width * 0.31;
+  const sy = cell.y + cell.height * 0.76;
+  const sw = cell.width * 0.67;
+  const sh = cell.height * 0.21;
   const scale = 4;
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(sw * scale));
@@ -963,9 +1023,9 @@ function findContentBands(image, axis) {
       const x = axis === "x" ? index : cross;
       const y = axis === "x" ? cross : index;
       const offset = (y * width + x) * 4;
-      if (Math.max(data[offset], data[offset + 1], data[offset + 2]) > 24) visible += 1;
+      if (Math.max(data[offset], data[offset + 1], data[offset + 2]) > 36) visible += 1;
     }
-    active[index] = visible / Math.ceil(crossLength / 2) > 0.035;
+    active[index] = visible / Math.ceil(crossLength / 2) > 0.08;
   }
 
   const bands = [];
@@ -1041,10 +1101,10 @@ async function getReferenceSignatures() {
         const image = await loadImageSource(imageURL(card));
         const canvas = createFeatureCanvas(
           image,
-          image.width * 0.06,
-          image.height * 0.1,
-          image.width * 0.88,
-          image.height * 0.34
+          image.width * 0.14,
+          image.height * 0.08,
+          image.width * 0.80,
+          image.height * 0.48
         );
         references.push({ card, embedding: await imageEmbedding(model, canvas) });
       } catch (error) {
@@ -1075,59 +1135,138 @@ function normalizedMask(points, outputWidth = 48, outputHeight = 30) {
   return mask;
 }
 
-function quantityTemplate(text, fontFamily) {
+const quantityGlyphCache = new Map();
+
+function glyphTemplate(character, fontFamily) {
+  const cacheKey = character + "::" + fontFamily;
+  if (quantityGlyphCache.has(cacheKey)) return quantityGlyphCache.get(cacheKey);
   const canvas = document.createElement("canvas");
-  canvas.width = 90;
-  canvas.height = 48;
+  canvas.width = 32;
+  canvas.height = 32;
   const context = canvas.getContext("2d", { willReadFrequently: true });
   context.fillStyle = "#fff";
-  context.font = `bold 38px ${fontFamily}`;
+  context.font = "700 14px " + fontFamily;
   context.textBaseline = "top";
-  context.fillText(text, 1, 0);
+  context.fillText(character, 2, 1);
   const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
   const points = [];
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
-      if (data[(y * width + x) * 4 + 3] > 80) points.push({ x, y });
+      if (data[(y * width + x) * 4 + 3] > 70) points.push({ x, y });
     }
   }
-  return normalizedMask(points);
+  const template = normalizedMask(points, 16, 20);
+  quantityGlyphCache.set(cacheKey, template);
+  return template;
 }
 
-function maskDistance(left, right) {
-  let mismatch = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    if (left[index] !== right[index]) mismatch += 1;
-  }
-  return mismatch / left.length;
-}
-
-function detectQuantity(image, cell) {
-  const sx = cell.x + cell.width * 0.68;
-  const sy = cell.y + cell.height * 0.04;
-  const sw = cell.width * 0.28;
-  const sh = cell.height * 0.21;
+function quantityComponents(image, cell) {
+  const sx = cell.x + cell.width * 0.12;
+  const sy = cell.y + cell.height * 0.09;
+  const sw = cell.width * 0.22;
+  const sh = cell.height * 0.13;
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(sw));
   canvas.height = Math.max(1, Math.round(sh));
   const context = canvas.getContext("2d", { willReadFrequently: true });
   context.drawImage(image, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
   const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
-  const points = [];
+  const active = new Uint8Array(width * height);
+
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const offset = (y * width + x) * 4;
       const red = data[offset];
       const green = data[offset + 1];
       const blue = data[offset + 2];
-      if (red > 180 && green > 150 && blue < 110 && red > blue * 1.5) points.push({ x, y });
+      const maximum = Math.max(red, green, blue);
+      const minimum = Math.min(red, green, blue);
+      if (maximum > 115 && maximum - minimum < 72) active[y * width + x] = 1;
     }
   }
-  if (points.length < Math.max(55, width * height * 0.045)) return 1;
-  const input = normalizedMask(points);
-  const fonts = ["Georgia", '"Times New Roman"', "serif"];
-  const score = (quantity) => Math.min(...fonts.map((font) => maskDistance(input, quantityTemplate(`X${quantity}`, font))));
-  return score(4) + 0.01 < score(2) ? 4 : 2;
+
+  const visited = new Uint8Array(active.length);
+  const components = [];
+  for (let start = 0; start < active.length; start += 1) {
+    if (!active[start] || visited[start]) continue;
+    const queue = [start];
+    const points = [];
+    visited[start] = 1;
+    while (queue.length) {
+      const current = queue.pop();
+      const x = current % width;
+      const y = Math.floor(current / width);
+      points.push({ x, y });
+      const neighbors = [current - 1, current + 1, current - width, current + width];
+      for (const neighbor of neighbors) {
+        if (neighbor < 0 || neighbor >= active.length || visited[neighbor] || !active[neighbor]) continue;
+        const neighborX = neighbor % width;
+        if (Math.abs(neighborX - x) > 1) continue;
+        visited[neighbor] = 1;
+        queue.push(neighbor);
+      }
+    }
+
+    const xs = points.map((point) => point.x);
+    const ys = points.map((point) => point.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const componentWidth = maxX - minX + 1;
+    const componentHeight = maxY - minY + 1;
+    if (points.length >= 4 && componentWidth <= 13 && componentHeight >= 4 && componentHeight <= 14) {
+      components.push({ points, minX, maxX, minY, maxY, width: componentWidth, height: componentHeight });
+    }
+  }
+  return components.sort((left, right) => left.minX - right.minX);
+}
+
+function maskDistance(left, right) {
+  let mismatch = 0;
+  const length = Math.min(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    if (left[index] !== right[index]) mismatch += 1;
+  }
+  return mismatch / Math.max(1, length);
+}
+
+function recognizeQuantityGlyph(component) {
+  const input = normalizedMask(component.points, 16, 20);
+  const fonts = ["Arial", "Helvetica", "Verdana", "sans-serif"];
+  let best = { digit: "", distance: Infinity };
+  for (let digit = 0; digit <= 9; digit += 1) {
+    for (const font of fonts) {
+      const distance = maskDistance(input, glyphTemplate(String(digit), font));
+      if (distance < best.distance) best = { digit: String(digit), distance };
+    }
+  }
+  return best;
+}
+
+function detectQuantity(image, cell) {
+  const components = quantityComponents(image, cell);
+  if (components.length < 2) return 1;
+
+  for (let start = 0; start < components.length - 1; start += 1) {
+    const first = components[start];
+    const line = [first];
+    for (let index = start + 1; index < components.length; index += 1) {
+      const candidate = components[index];
+      const previous = line[line.length - 1];
+      const baselineDifference = Math.abs(candidate.maxY - first.maxY);
+      const gap = candidate.minX - previous.maxX;
+      if (baselineDifference <= 3 && gap >= 0 && gap <= 7) line.push(candidate);
+      else if (gap > 7) break;
+    }
+    if (line.length < 2 || first.height < 5) continue;
+
+    const digits = line.slice(1, 3).map(recognizeQuantityGlyph);
+    if (!digits.length || digits.some((result) => result.distance > 0.48)) continue;
+    const quantity = Number(digits.map((result) => result.digit).join(""));
+    if (Number.isInteger(quantity) && quantity >= 2 && quantity <= 99) return quantity;
+  }
+  return 1;
 }
 
 function cropPreview(image, cell) {
@@ -1156,7 +1295,7 @@ function renderScanReview() {
   const options = state.cards
     .map((card) => `<option value="${escapeHTML(card.id)}">${escapeHTML(card.name)}</option>`)
     .join("");
-  els.scanSummary.textContent = `${state.scanResults.length} card slots detected. Review low-confidence matches before importing.`;
+  els.scanSummary.textContent = `${state.scanResults.length} card slots detected. Odds and borders improve the match; check tiny quantity badges before importing.`;
   els.scanResults.innerHTML = state.scanResults.map((result, index) => {
     const selectedOptions = options.replace(`value="${escapeHTML(result.cardId)}"`, `value="${escapeHTML(result.cardId)}" selected`);
     const confidenceClass = result.confidence >= 35 ? "is-good" : "needs-review";
@@ -1194,30 +1333,42 @@ async function scanInventoryImage(file) {
     const cells = detectInventoryCells(image);
     const references = await getReferenceSignatures();
     const model = await getImageModel();
+    let ocrWorker = null;
+    try {
+      ocrWorker = await getOCRWorker();
+    } catch (error) {
+      console.warn("Odds OCR unavailable; continuing with artwork matching", error);
+    }
     if (!references.length) throw new Error("Local reference card images could not be loaded.");
     const results = [];
     for (let index = 0; index < cells.length; index += 1) {
       const cell = cells[index];
-      els.scanProgressText.textContent = `Comparing card ${index + 1}/${cells.length}…`;
+      els.scanProgressText.textContent = `Reading card ${index + 1}/${cells.length}…`;
       const canvas = createFeatureCanvas(
         image,
-        cell.x + cell.width * 0.06,
-        cell.y + cell.height * 0.1,
-        cell.width * 0.88,
-        cell.height * 0.34
+        cell.x + cell.width * 0.14,
+        cell.y + cell.height * 0.08,
+        cell.width * 0.80,
+        cell.height * 0.48
       );
       const embedding = await imageEmbedding(model, canvas);
-      const match = matchCardByImage(embedding, references);
       const detectedBorders = detectScreenshotBorders(image, cell);
+      let recognition = { odds: 0, text: "", confidence: 0 };
+      if (ocrWorker) {
+        recognition = await recognizeDisplayedOdds(ocrWorker, image, cell, false);
+        if (!recognition.odds) recognition = await recognizeDisplayedOdds(ocrWorker, image, cell, true);
+      }
+      const match = matchCardByImage(embedding, references, recognition, detectedBorders);
+      const resolvedBorders = detectedBorders.length ? detectedBorders : match.combination;
       results.push({
         cardId: match.card.id,
         confidence: match.confidence,
         quantity: detectQuantity(image, cell),
         preview: cropPreview(image, cell),
         method: match.method,
-        displayedOdds: 0,
-        detectedBorders,
-        matchedCombination: [],
+        displayedOdds: recognition.odds,
+        detectedBorders: resolvedBorders,
+        matchedCombination: match.combination,
         alternatives: match.alternatives
       });
       await new Promise((resolve) => requestAnimationFrame(resolve));
