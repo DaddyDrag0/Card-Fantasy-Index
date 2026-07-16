@@ -142,12 +142,29 @@ function variantLabel(names) {
   return ordered.length ? ordered.join(" + ") : "Base";
 }
 
+function variantCode(names) {
+  const codes = { Shiny: "S", Diamond: "D", Radiant: "R" };
+  const ordered = canonicalBorderNames(names);
+  return ordered.length ? ordered.map(function (name) { return codes[name]; }).join("") : "Base";
+}
+
 function ownedCount(id) {
   return Math.max(0, Number(state.collection[id] || 0));
 }
 
 function variantOwnedCount(id, borders) {
   return Math.max(0, Number(state.collectionVariants[id]?.[variantKey(borders)] || 0));
+}
+
+function sanitizeTeamVariants(entries) {
+  const used = {};
+  return entries.filter(function (entry) {
+    const key = entry.id + "::" + variantKey(entry.borders);
+    const nextCount = (used[key] || 0) + 1;
+    if (nextCount > variantOwnedCount(entry.id, entry.borders)) return false;
+    used[key] = nextCount;
+    return true;
+  }).slice(0, MAX_TEAM_SIZE);
 }
 
 function rebuildCollectionTotals() {
@@ -278,7 +295,7 @@ function renderSummary() {
     const card = entry ? state.cards.find(function (item) { return item.id === entry.id; }) : null;
     if (!card) return '<div class="assistant-team-slot is-empty">Empty slot</div>';
     return '<div class="assistant-team-slot"><img src="' + imageURL(card) + '" alt=""><span><strong>' +
-      escapeHTML(card.name) + '</strong><small>' + escapeHTML(variantLabel(entry.borders)) + ' · ' +
+      escapeHTML(card.name) + '</strong><small>' + escapeHTML(variantCode(entry.borders)) + ' · ' +
       variantOwnedCount(card.id, entry.borders) + ' owned</small></span></div>';
   }).join("");
 
@@ -517,15 +534,30 @@ function buildRecommendations() {
   entries.sort(function (left, right) { return right.score - left.score; });
 
   const selected = [];
+  function selectedVariantCount(entry) {
+    const key = variantKey(entry.borders);
+    return selected.filter(function (item) {
+      return item.card.id === entry.card.id && variantKey(item.borders) === key;
+    }).length;
+  }
   function addEntry(entry) {
-    if (entry && !selected.some(function (item) { return item.card.id === entry.card.id; })) selected.push(entry);
+    if (!entry || selected.length >= MAX_TEAM_SIZE) return false;
+    if (selectedVariantCount(entry) >= entry.count) return false;
+    selected.push(entry);
+    return true;
   }
 
   if (enemyCount > 1) addEntry(entries.find(function (entry) { return entry.role === "aoe"; }));
   if (goal !== "damage" || enemyMaxATK > 0) addEntry(entries.find(function (entry) { return entry.role === "support"; }));
-  entries.forEach(function (entry) {
-    if (selected.length < MAX_TEAM_SIZE) addEntry(entry);
-  });
+
+  let addedCopy = true;
+  while (selected.length < MAX_TEAM_SIZE && addedCopy) {
+    addedCopy = false;
+    for (const entry of entries) {
+      if (addEntry(entry)) addedCopy = true;
+      if (selected.length >= MAX_TEAM_SIZE) break;
+    }
+  }
 
   state.recommendation = selected.slice(0, MAX_TEAM_SIZE);
   els.recommendationStatus.textContent = state.recommendation.length === MAX_TEAM_SIZE ? "Recommended" : state.recommendation.length + "/4 available";
@@ -537,19 +569,24 @@ function buildRecommendations() {
     return '<div class="recommendation-slot">' +
       '<span>' + (index + 1) + '</span>' +
       '<img src="' + imageURL(entry.card) + '" alt="">' +
-      '<div><strong>' + escapeHTML(entry.card.name) + '</strong><small>' + escapeHTML(variantLabel(entry.borders)) +
+      '<div><strong>' + escapeHTML(entry.card.name) + '</strong><small>' + escapeHTML(variantCode(entry.borders)) +
       ' · ' + escapeHTML(entry.role.toUpperCase()) + ' · HP ' + formatNumber(entry.stats.hp) + ' · ATK ' + formatNumber(entry.stats.atk) + '</small></div>' +
       '</div>';
   }).join("");
 
   const reasons = state.recommendation.map(function (entry, index) {
-    return '<li><strong>' + (index + 1) + '. ' + escapeHTML(variantLabel(entry.borders)) + ' ' +
+    return '<li><strong>' + (index + 1) + '. ' + escapeHTML(variantCode(entry.borders)) + ' ' +
       escapeHTML(entry.card.name) + ':</strong> ' + escapeHTML(recommendationReason(entry, encounter)) + '.</li>';
   }).join("");
   const alternatives = entries
-    .filter(function (entry) { return !state.recommendation.some(function (picked) { return picked.card.id === entry.card.id; }); })
+    .filter(function (entry) {
+      const pickedCount = state.recommendation.filter(function (picked) {
+        return picked.card.id === entry.card.id && variantKey(picked.borders) === variantKey(entry.borders);
+      }).length;
+      return pickedCount < entry.count;
+    })
     .slice(0, 3)
-    .map(function (entry) { return variantLabel(entry.borders) + " " + entry.card.name; });
+    .map(function (entry) { return variantCode(entry.borders) + " " + entry.card.name; });
 
   els.explanation.innerHTML =
     '<div class="assistant-answer">' +
@@ -566,10 +603,9 @@ async function init() {
   loadCollection();
   try {
     await loadCards();
-    state.teamVariants = state.teamVariants.filter(function (entry) {
-      return state.cards.some(function (card) { return card.id === entry.id; }) &&
-        variantOwnedCount(entry.id, entry.borders) > 0;
-    }).slice(0, MAX_TEAM_SIZE);
+    state.teamVariants = sanitizeTeamVariants(state.teamVariants.filter(function (entry) {
+      return state.cards.some(function (card) { return card.id === entry.id; });
+    }));
     state.team = state.teamVariants.map(function (entry) { return entry.id; });
     renderSummary();
     renderTargetOptions();
