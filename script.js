@@ -785,6 +785,8 @@ function matchCardByImage(embedding, references, recognition, detectedBorders) {
         ? "Artwork + closest odds"
         : "Artwork only — verify match",
     combination: best.combination.names,
+    oddsError: best.oddsError,
+    exactOdds,
     alternatives: ranking.slice(1, 4).map((candidate) => candidate.card.name)
   };
 }
@@ -1304,7 +1306,8 @@ function renderScanReview() {
         <img src="${result.preview}" alt="Detected inventory card ${index + 1}">
         <div class="scan-result-fields">
           <label>Matched card<select data-scan-card="${index}">${selectedOptions}</select></label>
-          <span class="scan-confidence ${confidenceClass}">${result.confidence}% match confidence</span>\n          <span class="scan-method">${escapeHTML(result.method)}${result.displayedOdds ? ` · Read 1/${formatNumber(result.displayedOdds)}` : ""}${result.detectedBorders.length ? ` · ${escapeHTML(result.detectedBorders.join(" + "))}` : ""}</span>
+          <span class="scan-confidence ${confidenceClass}">${result.confidence}% match confidence</span>
+          ${result.displayedOdds || result.detectedBorders.length ? `<span class="scan-method">${result.displayedOdds ? `Read 1/${formatNumber(result.displayedOdds)}` : ""}${result.displayedOdds && result.detectedBorders.length ? " · " : ""}${result.detectedBorders.length ? escapeHTML(result.detectedBorders.join(" + ")) : ""}</span>` : ""}
         </div>
         <label class="scan-quantity">Copies<input data-scan-quantity="${index}" type="number" min="1" max="99" value="${result.quantity}"></label>
       </div>
@@ -1359,7 +1362,12 @@ async function scanInventoryImage(file) {
         if (!recognition.odds) recognition = await recognizeDisplayedOdds(ocrWorker, image, cell, true);
       }
       const match = matchCardByImage(embedding, references, recognition, detectedBorders);
-      const resolvedBorders = detectedBorders.length ? detectedBorders : match.combination;
+      const oddsProveCombination = recognition.odds > 0 && match.exactOdds && match.oddsError < 0.018;
+      const resolvedBorders = oddsProveCombination
+        ? match.combination
+        : detectedBorders.length
+          ? detectedBorders
+          : match.combination;
       results.push({
         cardId: match.card.id,
         confidence: match.confidence,
