@@ -3,6 +3,7 @@ const DATA_URL = LIBRARY_ROOT + "data/cards.json";
 const IMAGE_ROOT = LIBRARY_ROOT + "assets/cards/";
 const STORAGE_KEY = "cf-deck-builder-state-v1";
 const MAX_TEAM_SIZE = 4;
+const BORDER_ORDER = ["Shiny", "Diamond", "Radiant"];
 const TOWER_API_URL = "https://script.google.com/macros/s/AKfycbwndb-XXP5r6-fIa-Dge9yBnvF0UZrVdyONry4b3f7H9oTQ4R0HH3baj78Br60m8KQc/exec";
 
 const SUPPORT_CARD_IDS = new Set([
@@ -93,7 +94,9 @@ const state = {
   cards: [],
   meta: { variants: [] },
   collection: {},
+  collectionVariants: {},
   team: [],
+  teamVariants: [],
   selectedBorders: new Set(),
   towerEncounter: null,
   recommendation: []
@@ -120,8 +123,44 @@ function normalizeName(value) {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+function canonicalBorderNames(names) {
+  const selected = new Set(Array.from(names || []));
+  return BORDER_ORDER.filter(function (name) { return selected.has(name); });
+}
+
+function variantKey(names) {
+  const ordered = canonicalBorderNames(names);
+  return ordered.length ? ordered.join("+") : "Base";
+}
+
+function bordersFromVariantKey(key) {
+  return !key || key === "Base" ? [] : canonicalBorderNames(String(key).split("+"));
+}
+
+function variantLabel(names) {
+  const ordered = canonicalBorderNames(names);
+  return ordered.length ? ordered.join(" + ") : "Base";
+}
+
 function ownedCount(id) {
   return Math.max(0, Number(state.collection[id] || 0));
+}
+
+function variantOwnedCount(id, borders) {
+  return Math.max(0, Number(state.collectionVariants[id]?.[variantKey(borders)] || 0));
+}
+
+function rebuildCollectionTotals() {
+  const totals = {};
+  Object.entries(state.collectionVariants).forEach(function (pair) {
+    const id = pair[0];
+    const variants = pair[1] || {};
+    const total = Object.values(variants).reduce(function (sum, count) {
+      return sum + Math.max(0, Math.floor(Number(count) || 0));
+    }, 0);
+    if (total > 0) totals[id] = total;
+  });
+  state.collection = totals;
 }
 
 function cardRole(card) {
@@ -135,16 +174,17 @@ function cardRole(card) {
   return "regular";
 }
 
-function modifierMultiplier() {
+function modifierMultiplier(borders) {
+  const selected = new Set(canonicalBorderNames(borders));
   return (state.meta.variants || []).reduce(function (multiplier, border) {
-    return state.selectedBorders.has(border.name)
+    return selected.has(border.name)
       ? multiplier * (Number(border.chance) || 1)
       : multiplier;
   }, 1);
 }
 
-function statsForCard(card) {
-  const odds = Math.max(1, (Number(card.odds) || 1) * modifierMultiplier());
+function statsForCard(card, borders) {
+  const odds = Math.max(1, (Number(card.odds) || 1) * modifierMultiplier(borders));
   const rawHP = Math.floor(Math.pow(2, Math.log10(odds)) * 20);
   const rawATK = Math.floor(rawHP / 3);
   const weatherMultiplier = Number(card.statMult || 1) || 1;
@@ -165,7 +205,7 @@ async function loadCards() {
   const parts = await Promise.all((index.parts || []).map(function (path) {
     return fetchJSON(LIBRARY_ROOT + path);
   }));
-  state.meta = index;
+  state.meta = index.meta || { variants: [] };
   state.cards = parts.flatMap(function (part) {
     return Array.isArray(part.cards) ? part.cards : [];
   });
@@ -174,8 +214,27 @@ async function loadCards() {
 function loadCollection() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
-    if (saved.collection && typeof saved.collection === "object") state.collection = saved.collection;
-    if (Array.isArray(saved.team)) state.team = saved.team.slice(0, MAX_TEAM_SIZE);
+    if (saved.collectionVariants && typeof saved.collectionVariants === "object") {
+      state.collectionVariants = saved.collectionVariants;
+      rebuildCollectionTotals();
+    } else if (saved.collection && typeof saved.collection === "object") {
+      state.collection = saved.collection;
+      Object.entries(saved.collection).forEach(function (pair) {
+        const count = Math.max(0, Math.floor(Number(pair[1]) || 0));
+        if (count > 0) state.collectionVariants[pair[0]] = { Base: count };
+      });
+    }
+
+    if (Array.isArray(saved.teamVariants)) {
+      state.teamVariants = saved.teamVariants.slice(0, MAX_TEAM_SIZE).map(function (entry) {
+        return { id: String(entry?.id || ""), borders: canonicalBorderNames(entry?.borders || []) };
+      });
+    } else if (Array.isArray(saved.team)) {
+      state.teamVariants = saved.team.slice(0, MAX_TEAM_SIZE).map(function (id) {
+        return { id: String(id), borders: [] };
+      });
+    }
+    state.team = state.teamVariants.map(function (entry) { return entry.id; });
     if (Array.isArray(saved.selectedBorders)) state.selectedBorders = new Set(saved.selectedBorders);
   } catch (error) {
     console.warn("Could not read saved collection", error);
@@ -183,8 +242,10 @@ function loadCollection() {
 }
 
 function saveRecommendedTeam() {
-  const ids = state.recommendation.map(function (entry) { return entry.card.id; });
-  if (!ids.length) return;
+  const teamVariants = state.recommendation.map(function (entry) {
+    return { id: entry.card.id, borders: canonicalBorderNames(entry.borders) };
+  });
+  if (!teamVariants.length) return;
 
   let saved = {};
   try {
@@ -193,10 +254,13 @@ function saveRecommendedTeam() {
     saved = {};
   }
   saved.collection = state.collection;
-  saved.team = ids;
+  saved.collectionVariants = state.collectionVariants;
+  saved.teamVariants = teamVariants;
+  saved.team = teamVariants.map(function (entry) { return entry.id; });
   saved.selectedBorders = Array.from(state.selectedBorders);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
-  state.team = ids;
+  state.teamVariants = teamVariants;
+  state.team = saved.team;
   renderSummary();
 
   const button = document.querySelector("#useRecommendedTeam");
@@ -207,13 +271,15 @@ function renderSummary() {
   const owned = state.cards.filter(function (card) { return ownedCount(card.id) > 0; });
   els.ownedCount.textContent = owned.length + " / " + state.cards.length;
   els.ownedProgress.style.width = (state.cards.length ? owned.length / state.cards.length * 100 : 0) + "%";
-  els.teamCount.textContent = state.team.length + "/" + MAX_TEAM_SIZE;
+  els.teamCount.textContent = state.teamVariants.length + "/" + MAX_TEAM_SIZE;
 
   els.currentTeam.innerHTML = Array.from({ length: MAX_TEAM_SIZE }, function (_, index) {
-    const card = state.cards.find(function (item) { return item.id === state.team[index]; });
+    const entry = state.teamVariants[index];
+    const card = entry ? state.cards.find(function (item) { return item.id === entry.id; }) : null;
     if (!card) return '<div class="assistant-team-slot is-empty">Empty slot</div>';
     return '<div class="assistant-team-slot"><img src="' + imageURL(card) + '" alt=""><span><strong>' +
-      escapeHTML(card.name) + '</strong><small>' + ownedCount(card.id) + ' owned</small></span></div>';
+      escapeHTML(card.name) + '</strong><small>' + escapeHTML(variantLabel(entry.borders)) + ' · ' +
+      variantOwnedCount(card.id, entry.borders) + ' owned</small></span></div>';
   }).join("");
 
   if (!owned.length) {
@@ -402,8 +468,22 @@ function buildRecommendations() {
   }
 
   const goal = els.goal.value;
-  const entries = owned.map(function (card) {
-    return { card: card, stats: statsForCard(card), role: cardRole(card), score: 0 };
+  const entries = [];
+  owned.forEach(function (card) {
+    const variants = state.collectionVariants[card.id] || {};
+    Object.entries(variants).forEach(function (pair) {
+      const borders = bordersFromVariantKey(pair[0]);
+      const count = Math.max(0, Math.floor(Number(pair[1]) || 0));
+      if (!count) return;
+      entries.push({
+        card: card,
+        borders: borders,
+        count: count,
+        stats: statsForCard(card, borders),
+        role: cardRole(card),
+        score: 0
+      });
+    });
   });
   const maxHP = Math.max.apply(null, entries.map(function (entry) { return entry.stats.hp; }));
   const maxATK = Math.max.apply(null, entries.map(function (entry) { return entry.stats.atk; }));
@@ -457,19 +537,19 @@ function buildRecommendations() {
     return '<div class="recommendation-slot">' +
       '<span>' + (index + 1) + '</span>' +
       '<img src="' + imageURL(entry.card) + '" alt="">' +
-      '<div><strong>' + escapeHTML(entry.card.name) + '</strong><small>' + escapeHTML(entry.role.toUpperCase()) +
-      ' · HP ' + formatNumber(entry.stats.hp) + ' · ATK ' + formatNumber(entry.stats.atk) + '</small></div>' +
+      '<div><strong>' + escapeHTML(entry.card.name) + '</strong><small>' + escapeHTML(variantLabel(entry.borders)) +
+      ' · ' + escapeHTML(entry.role.toUpperCase()) + ' · HP ' + formatNumber(entry.stats.hp) + ' · ATK ' + formatNumber(entry.stats.atk) + '</small></div>' +
       '</div>';
   }).join("");
 
   const reasons = state.recommendation.map(function (entry, index) {
-    return '<li><strong>' + (index + 1) + '. ' + escapeHTML(entry.card.name) + ':</strong> ' +
-      escapeHTML(recommendationReason(entry, encounter)) + '.</li>';
+    return '<li><strong>' + (index + 1) + '. ' + escapeHTML(variantLabel(entry.borders)) + ' ' +
+      escapeHTML(entry.card.name) + ':</strong> ' + escapeHTML(recommendationReason(entry, encounter)) + '.</li>';
   }).join("");
   const alternatives = entries
     .filter(function (entry) { return !state.recommendation.some(function (picked) { return picked.card.id === entry.card.id; }); })
     .slice(0, 3)
-    .map(function (entry) { return entry.card.name; });
+    .map(function (entry) { return variantLabel(entry.borders) + " " + entry.card.name; });
 
   els.explanation.innerHTML =
     '<div class="assistant-answer">' +
@@ -486,9 +566,11 @@ async function init() {
   loadCollection();
   try {
     await loadCards();
-    state.team = state.team.filter(function (id) {
-      return state.cards.some(function (card) { return card.id === id; }) && ownedCount(id) > 0;
-    });
+    state.teamVariants = state.teamVariants.filter(function (entry) {
+      return state.cards.some(function (card) { return card.id === entry.id; }) &&
+        variantOwnedCount(entry.id, entry.borders) > 0;
+    }).slice(0, MAX_TEAM_SIZE);
+    state.team = state.teamVariants.map(function (entry) { return entry.id; });
     renderSummary();
     renderTargetOptions();
     renderSelectedEncounter();
