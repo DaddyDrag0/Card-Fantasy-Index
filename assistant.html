@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assistant.css?v=6">
+  <link rel="stylesheet" href="assistant.css?v=7">
 </head>
 <body>
   <div class="assistant-shell">
@@ -39,7 +39,7 @@
         <div>
           <p class="eyebrow">Card Fantasy</p>
           <h1>AI Deck Assistant</h1>
-          <p>Choose a boss or generate an Infinite Tower floor, then build the strongest four-card team from your owned collection.</p>
+          <p>Simulate real ordered battles against bosses or random Infinite Tower lineups, then build the strongest four-card team from your owned collection.</p>
         </div>
         <span class="phase-badge">Assistant online</span>
       </header>
@@ -63,12 +63,12 @@
               <option value="counter">Counter the opponent</option>
             </select>
           </label>
-          <button id="assistantAnalyze" type="button">Build recommended team</button>
+          <button id="assistantAnalyze" type="button">Simulate best team</button>
         </div>
 
         <div class="data-notice is-connected">
           <span>✓</span>
-          <p><strong>Recommendation engine ready.</strong> It compares your owned cards, current modifiers, stats, roles, and ability descriptions against the selected enemies.</p>
+          <p><strong>Local battle simulator ready.</strong> It searches owned card variants, rolls chance effects, tests battle order, and runs entirely in your browser without a paid AI API.</p>
         </div>
       </section>
 
@@ -85,6 +85,12 @@
           <div class="panel-heading">
             <div><span class="step-number">3</span><div><h2>Recommended team</h2><p>The best four cards and their battle order.</p></div></div>
             <span class="live-label" id="recommendationStatus">Ready</span>
+          </div>
+          <div class="simulation-summary" id="simulationSummary" hidden>
+            <div><small>Estimated win chance</small><strong id="simulationWinChance">—</strong></div>
+            <div><small>Expected result</small><strong id="simulationVerdict">—</strong></div>
+            <div><small>Verification</small><strong id="simulationTrials">—</strong></div>
+            <div id="simulationFloorMetric" hidden><small>Tower ceiling range</small><strong id="simulationFloorRange">—</strong></div>
           </div>
           <div class="recommended-slots" id="recommendedSlots">
             <div><span>1</span><strong>Team slot</strong><small>Run the assistant</small></div>
@@ -136,6 +142,6 @@
     </main>
   </div>
 
-  <script src="assistant.js?v=8"></script>
+  <script src="assistant.js?v=9"></script>
 </body>
 </html>
